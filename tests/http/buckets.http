@@ -1,0 +1,72 @@
+
+@BucketName=archive-bucket1
+@BucketId=4163011c-8f37-454c-b8e4-b62d2ff1928b 
+@BucketUrls=http://localhost:8080/api/v1/buckets
+
+### LIST ALL BUCKETS
+GET {{BucketUrls}}
+
+### CREATE BUCKET
+POST {{BucketUrls}}
+Content-Type: application/json
+
+{
+  "name": "{{BucketName}}",
+  "owner_id": "550e8400-e29b-41d4-a716-446655440000" 
+}
+
+### GET BUCKET INFO
+GET {{BucketUrls}}/{{BucketId}}
+
+### DELETE BUCKET
+DELETE {{BucketUrls}}/{{BucketId}}
+
+
+
+### First you would need to create another bucket to test the others 
+
+
+
+### GET BUCKET STATS
+GET {{BucketUrls}}/{{BucketId}}/stats
+
+### GET BUCKET POLICY
+GET {{BucketUrls}}/{{BucketId}}/policy
+
+### UPDATE BUCKET POLICY
+PUT {{BucketUrls}}/{{BucketId}}/policy
+Content-Type: application/json
+
+{
+  "policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":\"*\",\"Action\":\"s3:GetObject\",\"Resource\":\"arn:aws:s3:::bucket/*\"}]}"
+}
+
+### GET BUCKET VERSIONING
+GET {{BucketUrls}}/{{BucketId}}/?versioning
+
+### SET BUCKET VERSIONING
+PUT {{BucketUrls}}/{{BucketId}}/versioning
+Content-Type: application/json
+
+{
+  "enabled": true
+}
+
+### SET BUCKET LIFECYCLE
+PUT  {{BucketUrls}}/{{BucketId}}/lifecycle
+Content-Type: application/json
+
+{
+  "rules": [
+    {
+      "id": "expire-old-files",
+      "prefix": "logs/",
+      "expiration_days": 30
+    }
+  ]
+}
+
+
+
+
+

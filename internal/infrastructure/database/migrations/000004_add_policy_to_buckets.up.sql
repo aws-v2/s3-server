@@ -1,0 +1,2 @@
+ALTER TABLE buckets 
+ADD COLUMN policy JSONB;

@@ -1,0 +1,10 @@
+@BaseUrl=http://localhost:8080/api/v1
+
+
+### GET SAMPLE METRICS
+GET {{BaseUrl}}/health/metrics
+### GET  STATUS OF THE SERVER
+GET {{BaseUrl}}/health/status
+### PING THE SERVER
+GET {{BaseUrl}}/health/ping
+

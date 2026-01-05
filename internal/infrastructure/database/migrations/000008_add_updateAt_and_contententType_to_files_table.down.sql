@@ -1,0 +1,4 @@
+ALTER TABLE files
+DROP COLUMN IF EXISTS updated_at,
+DROP COLUMN IF EXISTS content_type;
+DROP COLUMN IF EXISTS verison;

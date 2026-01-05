@@ -1,0 +1,64 @@
+@baseUrl = http://localhost:8080/api/v1
+@bucketId = archive-bucket
+
+### List by prefix
+GET {{baseUrl}}/prefix/{{bucketId}}/list?prefix=uploads/&limit=10
+
+###
+
+### Delete by prefix
+DELETE {{baseUrl}}/prefix/{{bucketId}}/delete
+Content-Type: application/json
+
+{
+  "prefix": "temp/"
+}
+
+###
+
+### Copy by prefix
+POST {{baseUrl}}/prefix/{{bucketId}}/copy
+Content-Type: application/json
+
+{
+  "source_prefix": "uploads/2024/",
+  "dest_prefix": "archive/2024/"
+}
+
+###
+
+### Get size by prefix
+GET {{baseUrl}}/prefix/{{bucketId}}/size?prefix=uploads/
+
+###
+
+### Count by prefix
+GET {{baseUrl}}/prefix/{{bucketId}}/count?prefix=uploads/
+
+###
+
+### Archive by prefix
+POST {{baseUrl}}/prefix/{{bucketId}}/archive
+Content-Type: application/json
+
+{
+  "prefix": "uploads/images/",
+  "archive_name": "images-backup",
+  "format": "zip"
+}
+
+###
+
+### Set metadata by prefix
+PATCH {{baseUrl}}/prefix/{{bucketId}}/metadata
+Content-Type: application/json
+
+{
+  "prefix": "uploads/",
+  "metadata": {
+    "archived": "true",
+    "archived_date": "2025-10-10"
+  }
+}
+
+###

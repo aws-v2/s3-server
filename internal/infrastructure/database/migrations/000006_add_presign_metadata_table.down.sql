@@ -1,0 +1,1 @@
+DROP TABLE IF EXISTS presigned_urls CASCADE

@@ -1,0 +1,42 @@
+@baseUrl = http://localhost:8080/api/v1
+
+### Search files
+GET {{baseUrl}}/search/files?query=image&limit=10
+
+### Search by metadata
+GET {{baseUrl}}/search/metadata?metadata[author]=john&limit=10
+
+### Search by tags
+GET {{baseUrl}}/search/tags?tags=important&tags=archived
+
+### Advanced search
+POST {{baseUrl}}/search/advanced
+Content-Type: application/json
+
+{
+  "query": "report",
+  "min_size": 1024,
+  "max_size": 1048576,
+  "content_types": ["application/pdf", "text/plain"],
+  "limit": 20
+}
+
+### Get suggestions
+GET {{baseUrl}}/search/suggestions?query=doc
+
+### Get history
+GET {{baseUrl}}/search/history?limit=10
+
+### Save search
+POST {{baseUrl}}/search/save
+Content-Type: application/json
+
+{
+  "name": "Large PDF Files",
+  "query": "pdf",
+  "filters": {
+    "content_type": "application/pdf",
+    "min_size": "1048576"
+  },
+  "description": "Find all PDFs larger than 1MB"
+}

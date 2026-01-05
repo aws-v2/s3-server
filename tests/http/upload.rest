@@ -1,0 +1,85 @@
+
+
+@BucketName=archive-bubgo
+@BucketId=4163011c-8f37-454c-b8e4-b62d2ff1928b 
+@FilesUrl=http://localhost:8080/api/v1/files
+@fileId=1760104703861387700
+
+
+
+### UPLOAD FILE
+POST {{FilesUrl}}/upload/{{BucketName}}
+x-api-key: 550e8400-e29b-41d4-a716-446655440000
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary
+
+------WebKitFormBoundary
+Content-Disposition: form-data; name="file"; filename="pea1kpx.png"
+Content-Type: image/png
+
+< ./test_media/peapx.jpg
+------WebKitFormBoundary--
+### LIST FILES IN BUCKET
+GET {{FilesUrl}}/{{BucketName}}
+
+### GET FILE METADATA (You would need to update the fileId defination above to a value produced when you upload a file  )
+GET {{FilesUrl}}/{{BucketName}}/files/{{fileId}}
+
+#### DOWNLOAD FILE
+GET {{FilesUrl}}/{{BucketId}}/files/{{fileId}}/download
+
+
+
+### UPDATE FILE METADATA
+PATCH {{FilesUrl}}/{{BucketId}}/files/{{fileId}}
+Content-Type: application/json
+
+{
+  "metadata": {
+    "description": "Updated document",
+    "tags": "important,archive",
+    "modified_by": "user123"
+  }
+}
+
+### COPY FILE
+POST {{FilesUrl}}/{{BucketId}}/files/{{fileId}}/copy
+Content-Type: application/json
+
+{
+  "destination_bucket": "test-bucket1",
+  "new_key": "copied-example.png"
+}
+
+
+### MOVE FILE
+POST {{FilesUrl}}/files/{{BucketId}}/files/{{fileId}}/move
+Content-Type: application/json
+
+{
+  "destination_bucket": "archive-bucket",
+  "new_key": "archived-example.png"
+}
+
+### DELETE FILE
+DELETE {{FilesUrl}}/{{BucketId}}/files/{{fileId}}
+
+
+
+ 
+
+
+ git commit -m """
+ 
+ feat: implement core S3 API features - batch ops, search, webhooks, analytics, and multipart uploads
+
+- Add presigned URL management (revoke, validate, list)
+- Implement batch operations (upload, delete, copy, move, metadata)
+- Add prefix-based operations (list, delete, copy, archive, metadata updates)
+- Implement search functionality (files, metadata, tags, advanced filters, history)
+- Add webhook system (CRUD, test, delivery tracking)
+- Implement analytics endpoints (storage, traffic, file types, popular files, exports)
+- Add multipart upload flow (initiate, upload parts, complete, abort, list)
+- Update repository interfaces and Postgres implementations
+- Add migration scripts for new tables
+ 
+ """

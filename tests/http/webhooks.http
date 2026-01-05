@@ -1,0 +1,37 @@
+@baseUrl = http://localhost:8080/api/v1
+@bucketId = archive-bucket2
+@webhookId = 3440b190-2722-4385-81bd-dc862e9b7446
+
+### Create webhook
+POST {{baseUrl}}/webhooks
+Content-Type: application/json
+
+{
+  "bucket_id": "{{bucketId}}",
+  "name": "Object Created Hook",
+  "url": "https://webhook.site/unique-url",
+  "events": ["object.created", "object.deleted"]
+}
+
+### List webhooks
+GET {{baseUrl}}/webhooks/bucket/{{bucketId}}
+
+### Get webhook
+GET {{baseUrl}}/webhooks/{{webhookId}}
+
+### Update webhook
+PATCH {{baseUrl}}/webhooks/{{webhookId}}
+Content-Type: application/json
+
+{
+  "active": false
+}
+
+### Test webhook
+POST {{baseUrl}}/webhooks/{{webhookId}}/test
+
+### Get deliveries
+GET {{baseUrl}}/webhooks/{{webhookId}}/deliveries
+
+### Delete webhook
+DELETE {{baseUrl}}/webhooks/{{webhookId}}

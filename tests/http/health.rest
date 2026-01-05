@@ -1,0 +1,10 @@
+
+@BaseUrl = http://localhost:8080
+
+
+### Ping the server
+GET {{BaseUrl}}/api/v1/health/ping
+### check the status of the server, ie. its just not on
+GET {{BaseUrl}}/api/v1/health/status
+### get system metrics
+GET {{BaseUrl}}/api/v1/health/metrics

@@ -1,0 +1,82 @@
+@Baseurl = http://localhost:8080/api/v1
+
+@BucketId=73dc5c82-1960-48c5-a3d7-c1a1036f6afd 
+@fileId=1759861875050986600
+
+
+### Generate Presigned URL for Upload
+POST {{Baseurl}}/presign/{{BucketId}}/upload
+Content-Type: application/json
+
+{
+  "key": "test-files/document.pdf",
+  "expiresIn": 3600,
+  "contentType": "application/pdf",
+  "metadata": {
+    "uploaded_by": "user123",
+    "department": "engineering"
+  }
+}
+
+
+
+
+
+### Generate Presigned URL for Upload
+POST {{Baseurl}}/presign/{{BucketId}}/files/{{fileId}}/download
+Content-Type: application/json
+
+{
+  "key": "test-files/document.pdf",
+  "expiresIn": 3600,
+  "contentType": "application/pdf",
+  "metadata": {
+    "uploaded_by": "user123",
+    "department": "engineering"
+  }
+}
+
+
+
+
+@bucketId = archive-bucket2
+@objectKey = pakpx.png
+@urlId = b888eeb7-0717-44b0-8f97-117ca6c1f367
+
+
+ 
+
+### Revoke Presigned URL
+DELETE {{Baseurl}}/presign/urls/{{urlId}}
+Content-Type: application/json
+
+###
+
+### List Active Presigned URLs
+GET {{Baseurl}}/presign/urls
+Content-Type: application/json
+
+###
+
+### Validate Presigned URL
+POST {{Baseurl}}/presign/validate
+Content-Type: application/json
+
+{
+  "url_id": "{{Baseurl}}"
+}
+
+###
+
+### Generate Multipart Upload URLs
+POST {{Baseurl}}/presign/{{BucketId}}/multipart
+Content-Type: application/json
+
+{
+  "key": "large-file.zip",
+  "parts": 5,
+  "content_type": "application/zip",
+  "expires_in": 3600
+}
+
+###

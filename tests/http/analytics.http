@@ -1,0 +1,28 @@
+@baseUrl = http://localhost:8080/api/v1
+
+### Get storage usage
+GET {{baseUrl}}/analytics/storage/usage
+
+### Get traffic stats
+GET {{baseUrl}}/analytics/traffic?start_date=2025-01-01&end_date=2025-10-10
+
+### Get file type distribution
+GET {{baseUrl}}/analytics/files/types
+
+### Get bucket usage over time
+GET {{baseUrl}}/analytics/buckets/archive-bucket2/usage?days=30
+
+### Get popular files
+GET {{baseUrl}}/analytics/files/popular?limit=10
+
+### Get user activity
+GET {{baseUrl}}/analytics/users/user123/activity
+
+### Export analytics (JSON)
+GET {{baseUrl}}/analytics/export?format=json
+
+### Export analytics (CSV)
+GET {{baseUrl}}/analytics/export?format=csv
+
+### Get API usage
+GET {{baseUrl}}/analytics/api/usage

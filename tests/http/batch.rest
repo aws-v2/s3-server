@@ -1,0 +1,104 @@
+@baseUrl = http://localhost:8080/api/v1
+@bucketId = archive-bucket
+@operationId = eadf8a5a-213d-423a-bf1d-818ccb21bfd7
+
+### Batch Upload
+POST {{baseUrl}}/batch/upload
+Content-Type: application/json
+
+{
+  "bucket_id": "{{bucketId}}",
+  "files": [
+    {
+      "key": "file1.txt",
+      "data": "SGVsbG8gV29ybGQ=",
+      "content_type": "text/plain"
+    },
+    {
+      "key": "file2.txt",
+      "data": "VGVzdCBEYXRh",
+      "content_type": "text/plain"
+    }
+  ]
+}
+
+###
+
+### Batch Delete
+DELETE {{baseUrl}}/batch/delete
+Content-Type: application/json
+
+{
+  "bucket_id": "{{bucketId}}",
+  "keys": ["file1.txt", "file2.txt"]
+}
+
+###
+
+### Batch Copy
+POST {{baseUrl}}/batch/copy
+Content-Type: application/json
+
+{
+  "items": [
+    {
+      "source_bucket": "{{bucketId}}",
+      "source_key": "file1.txt",
+      "dest_bucket": "{{bucketId}}",
+      "dest_key": "copy-file1.txt"
+    }
+  ]
+}
+
+###
+
+### Batch Move
+POST {{baseUrl}}/batch/move
+Content-Type: application/json
+
+{
+  "items": [
+    {
+      "source_bucket": "{{bucketId}}",
+      "source_key": "file1.txt",
+      "dest_bucket": "{{bucketId}}",
+      "dest_key": "moved-file1.txt"
+    }
+  ]
+}
+
+###
+
+### Batch Update Metadata
+PATCH {{baseUrl}}/batch/metadata
+Content-Type: application/json
+
+{
+  "bucket_id": "{{bucketId}}",
+  "updates": [
+    {
+      "key": "file1.txt",
+      "metadata": {
+        "author": "John",
+        "version": "2"
+      }
+    }
+  ]
+}
+
+###
+
+### Get Batch Operation Status
+GET {{baseUrl}}/batch/operations/{{operationId}}
+
+###
+
+### List Batch Operations
+GET {{baseUrl}}/batch/operations?status=completed&limit=10
+
+###
+
+### Cancel Batch Operation
+DELETE {{baseUrl}}/batch/operations/{{operationId}}
+
+###
