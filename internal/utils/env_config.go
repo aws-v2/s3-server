@@ -63,7 +63,7 @@ func Load() (*Config, error) {
 			UseSSL:    getEnvBool("MINIO_USE_SSL", false),
 		},
 		Server: ServerConfig{
-			Port: getEnv("SERVER_PORT", "8080"),
+			Port: getEnv("SERVER_PORT", "8082"),
 		},
 	}
 	

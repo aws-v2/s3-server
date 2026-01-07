@@ -8,11 +8,12 @@ import (
 	"s3/internal/application"
 
 	// "s3/internal/infrastructure/database"
-	"s3/internal/infrastructure/repository"
 	"s3/internal/infrastructure/database"
+	"s3/internal/infrastructure/repository"
 
-	"s3/internal/infrastructure/storage"
+	"s3/internal/infrastructure/auth"
 	"s3/internal/infrastructure/event"
+	"s3/internal/infrastructure/storage"
 	"s3/internal/middleware"
 
 	"s3/internal/infrastructure/system"
@@ -22,9 +23,167 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+
+	"bytes"
+	"encoding/json"
+	"io"
+	httpd "net/http"
 )
 
+// EurekaConfig holds Eureka registration configuration
+type EurekaConfig struct {
+	ServerURL    string
+	AppName      string
+	HostName     string
+	IPAddr       string
+	Port         int
+	VipAddress   string
+	InstanceID   string
+	HeartbeatInterval time.Duration
+}
+
+// getEurekaConfig reads Eureka configuration from environment variables
+func getEurekaConfig() *EurekaConfig {
+	return &EurekaConfig{
+		ServerURL:    getEnv("EUREKA_SERVER_URL", "http://localhost:8761/eureka"),
+		AppName:      getEnv("EUREKA_APP_NAME", "S3-SERVICE"),
+		HostName:     getEnv("EUREKA_HOSTNAME", "s3-service:8082"),
+		IPAddr:       getEnv("EUREKA_IP_ADDR", "10.0.0.15"),
+		Port:         getEnvInt("SERVER_PORT", 8082),
+		VipAddress:   getEnv("EUREKA_VIP_ADDRESS", "s3-service"),
+		InstanceID:   getEnv("EUREKA_INSTANCE_ID", "s3-service.local:8082"),
+		HeartbeatInterval: getEnvDuration("EUREKA_HEARTBEAT_INTERVAL", 30*time.Second),
+	}
+}
+
+// registerWithEureka registers the service instance with Eureka server
+func registerWithEureka(config *EurekaConfig) error {
+	instance := map[string]interface{}{
+		"instance": map[string]interface{}{
+			"hostName": config.HostName,
+			"app":      config.AppName,
+			"ipAddr":   config.IPAddr,
+			"vipAddress": config.VipAddress,
+			"status":   "UP",
+			"port": map[string]interface{}{
+				"$":        config.Port,
+				"@enabled": "true",
+			},
+			"dataCenterInfo": map[string]interface{}{
+				"@class": "com.netflix.appinfo.InstanceInfo$DefaultDataCenterInfo",
+				"name":   "MyOwn",
+			},
+			"healthCheckUrl": fmt.Sprintf("http://%s:%d/health", config.HostName, config.Port),
+			"statusPageUrl":  fmt.Sprintf("http://%s:%d/health", config.HostName, config.Port),
+			"homePageUrl":    fmt.Sprintf("http://%s:%d/", config.HostName, config.Port),
+		},
+	}
+
+	jsonData, err := json.Marshal(instance)
+	if err != nil {
+		return fmt.Errorf("failed to marshal Eureka registration data: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/apps/%s", config.ServerURL, config.AppName)
+	req, err := httpd.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to create registration request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	client := &httpd.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to register with Eureka: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != httpd.StatusNoContent && resp.StatusCode != httpd.StatusOK {
+		return fmt.Errorf("eureka registration failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	log.Printf("✅ Successfully registered with Eureka server at %s", url)
+	return nil
+}
+
+// sendHeartbeat sends periodic heartbeats to Eureka server
+func sendHeartbeat(config *EurekaConfig) {
+	ticker := time.NewTicker(config.HeartbeatInterval)
+	defer ticker.Stop()
+
+	url := fmt.Sprintf("%s/apps/%s/%s", config.ServerURL, config.AppName, config.InstanceID)
+	client := &httpd.Client{Timeout: 5 * time.Second}
+
+	for range ticker.C {
+		req, err := httpd.NewRequest("PUT", url, nil)
+		if err != nil {
+			log.Printf("❌ Failed to create heartbeat request: %v", err)
+			continue
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			log.Printf("❌ Failed to send heartbeat to Eureka: %v", err)
+			continue
+		}
+
+		if resp.StatusCode != httpd.StatusOK && resp.StatusCode != httpd.StatusNoContent {
+			body, _ := io.ReadAll(resp.Body)
+			log.Printf("⚠️  Heartbeat failed with status %d: %s", resp.StatusCode, string(body))
+		} else {
+			log.Printf("💓 Heartbeat sent successfully to Eureka")
+		}
+
+		resp.Body.Close()
+	}
+}
+
+// deregisterFromEureka removes the service instance from Eureka (optional, for graceful shutdown)
+func deregisterFromEureka(config *EurekaConfig) error {
+	url := fmt.Sprintf("%s/apps/%s/%s", config.ServerURL, config.AppName, config.InstanceID)
+	req, err := httpd.NewRequest("DELETE", url, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create deregistration request: %w", err)
+	}
+
+	client := &httpd.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to deregister from Eureka: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != httpd.StatusOK && resp.StatusCode != httpd.StatusNoContent {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("deregistration failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	log.Printf("✅ Successfully deregistered from Eureka server")
+	return nil
+}
+
+
+ 
+
 func main() {
+     eurekaConfig := getEurekaConfig()
+    
+    // Register with retries
+    for i := 0; i < 3; i++ {
+        if err := registerWithEureka(eurekaConfig); err != nil {
+            log.Printf("⚠️  Eureka registration attempt %d failed: %v", i+1, err)
+            time.Sleep(5 * time.Second)
+        } else {
+            break
+        }
+    }
+    
+    // Start heartbeat
+    go sendHeartbeat(eurekaConfig)
 
 	cfg, err := utils.Load()
 	if err != nil {
@@ -42,7 +201,7 @@ func main() {
 		log.Fatalf("Failed to create MinIO adapter: %v", err)
 	}
 
-	serverPort := getEnv("SERVER_PORT", "8080")
+	serverPort := getEnv("SERVER_PORT", "8082")
 
 	dbConfig := database.Config{
 		Host:            cfg.DB.Host,
@@ -78,10 +237,16 @@ func main() {
 	// Create IAM validator
 	iamValidator := middleware.NewIAMValidator(natsAdapter.GetConnection())
 
+	// Create JWT service
+	jwtSecret := getEnv("JWT_SECRET", "your-secret-key-change-this-in-production")
+	jwtIssuer := getEnv("JWT_ISSUER", "s3-clone")
+	jwtExpiryMinutes := getEnvInt("JWT_EXPIRY_MINUTES", 1440) // 24 hours default
+	jwtService := auth.NewJWTService(jwtSecret, jwtIssuer, jwtExpiryMinutes)
+
 	// // Run migrations
 	// log.Println("Running database migrations...")
 	// if err := database.RunMigrations(db, dbConfig.Database); err != nil {
-	// 	log.Fatalf("1Failed to run migrations: %v", err)
+	// 	log.Fatalf("Failed to run migrations: %v", err)
 	// }
 	// log.Println("Migrations completed successfully")
 
@@ -108,21 +273,24 @@ func main() {
 	webhookService := application.NewWebhookService(postgresRepo)
 	analyticsService := application.NewAnalyticsService(postgresRepo)
 	multipartService := application.NewMultipartService(postgresRepo,minioAdapter)
+	// authService := application.NewAuthService(postgresRepo, jwtService)
 
 	// 3. Initialize Transport Layer (HTTP)
 	log.Println("Initializing HTTP handlers...")
 	handlers := &http.Handlers{
-		File:      http.NewFileHandler(uploadService, deleteService),
-		Bucket:    http.NewBucketHandler(bucketService),
-		Health:    http.NewHealthHandler(healthService),
-		Presign:   http.NewPresignHandler(presignedService),   // TODO: implement later
-		Batch:     http.NewBatchHandler(batchService),         // TODO: implement later
-		Prefix:    http.NewPrefixHandler(prefixService),       // TODO: implement later
-		Search:    http.NewSearchHandler(SearchService),       // TODO: implement later
-		Webhook:   http.NewWebhookHandler(webhookService),     // TODO: implement later
-		Analytics: http.NewAnalyticsHandler(analyticsService), // TODO: implement later
-		Multipart: http.NewMultipartHandler(multipartService), // TODO: implement later
-		Validator: iamValidator,                               // IAM validator for authentication
+		File:         http.NewFileHandler(uploadService, deleteService),
+		Bucket:       http.NewBucketHandler(bucketService),
+		Health:       http.NewHealthHandler(healthService),
+		Presign:      http.NewPresignHandler(presignedService),   // TODO: implement later
+		Batch:        http.NewBatchHandler(batchService),         // TODO: implement later
+		Prefix:       http.NewPrefixHandler(prefixService),       // TODO: implement later
+		Search:       http.NewSearchHandler(SearchService),       // TODO: implement later
+		Webhook:      http.NewWebhookHandler(webhookService),     // TODO: implement later
+		Analytics:    http.NewAnalyticsHandler(analyticsService), // TODO: implement later
+		Multipart:    http.NewMultipartHandler(multipartService), // TODO: implement later
+		// Auth:         http.NewAuthHandler(authService),           // JWT authentication handler
+		Validator:    iamValidator,                               // IAM/API Key validator
+		JWTValidator: jwtService,                                 // JWT validator
 
 	}
 
@@ -133,6 +301,9 @@ func main() {
 	// 5. Start Server
 	log.Printf("🚀 Server starting on port %s...", serverPort)
 	log.Printf("📝 API endpoints:")
+	log.Printf("  - POST   /api/v1/auth/register (public)")
+	log.Printf("  - POST   /api/v1/auth/login (public)")
+	log.Printf("  - GET    /api/v1/auth/me (protected)")
 	log.Printf("  - POST   /api/v1/buckets/:bucketId/files")
 	log.Printf("  - GET    /api/v1/buckets/:bucketId/files")
 	log.Printf("  - DELETE /api/v1/buckets/:bucketId/files/:fileId?key=<filename>")
@@ -141,6 +312,9 @@ func main() {
 	if err := router.Run(":" + serverPort); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
+
+
+
 }
 
 func getEnvInt(key string, defaultVal int) int {

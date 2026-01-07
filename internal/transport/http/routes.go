@@ -1,6 +1,7 @@
 package http
 
 import (
+	"s3/internal/domain"
 	"s3/internal/middleware"
 
 	"github.com/gin-gonic/gin"
@@ -8,17 +9,19 @@ import (
 
 // Handlers struct holds all handler dependencies
 type Handlers struct {
-	File      *HandlerForFiles
-	Bucket    *BucketHandler
-	Health    *HandlerForHealth
-	Presign   *PresignHandler
-	Batch     *BatchHandler
-	Prefix    *PrefixHandler
-	Search    *SearchHandler
-	Webhook   *WebhookHandler
-	Multipart *MultipartHandler
-	Analytics *AnalyticsHandler
-	Validator middleware.APIKeyValidator
+	File         *HandlerForFiles
+	Bucket       *BucketHandler
+	Health       *HandlerForHealth
+	Presign      *PresignHandler
+	Batch        *BatchHandler
+	Prefix       *PrefixHandler
+	Search       *SearchHandler
+	Webhook      *WebhookHandler
+	Multipart    *MultipartHandler
+	Analytics    *AnalyticsHandler
+	Auth         *AuthHandler
+	Validator    middleware.APIKeyValidator
+	JWTValidator domain.JWTValidator
 }
 
 // RegisterRoutes registers all application routes
@@ -26,10 +29,16 @@ func RegisterRoutes(router *gin.Engine, handlers *Handlers) {
 	// API v1 group
 	v1 := router.Group("/api/v1")
 
+	// Chain authentication middlewares: try API key first, then JWT
+	v1.Use(middleware.APIKeyAuthMiddleware(handlers.Validator))
+	v1.Use(middleware.BearerAuthMiddleware(handlers.JWTValidator))
+
+
 	// Track all V1 requests
 	v1.Use(handlers.Analytics.TrackRequestMiddleware())
 
 	// Register domain-specific routes
+	registerAuthRoutes(v1, handlers.Auth)
 	registerObjectRoutes(v1, handlers.File, handlers.Validator)
 	registerBucketRoutes(v1, handlers.Bucket, handlers.Validator)
 	registerHealthRoutes(v1, handlers.Health)
@@ -41,6 +50,23 @@ func RegisterRoutes(router *gin.Engine, handlers *Handlers) {
 	registerSearchRoutes(v1, handlers.Search)
 	registerPrefixRoutes(v1, handlers.Prefix)
 
+}
+
+// registerAuthRoutes registers authentication routes
+func registerAuthRoutes(v1 *gin.RouterGroup, handler *AuthHandler) {
+	auth := v1.Group("/auth")
+	{
+		// Public routes (no authentication required)
+		auth.POST("/register", handler.Register)
+		auth.POST("/login", handler.Login)
+
+		// Protected routes (require authentication)
+		protected := auth.Group("")
+		protected.Use(middleware.RequireAuth())
+		{
+			protected.GET("/me", handler.GetCurrentUser)
+		}
+	}
 }
 
 // registerHealthRoutes registers all health check routes
@@ -96,7 +122,7 @@ func registerBucketRoutes(v1 *gin.RouterGroup, handler *BucketHandler, validator
 	buckets.Use(middleware.APIKeyAuthMiddleware(validator))
 	{
 		// Create new bucket
-		buckets.POST("", handler.CreateBucket)
+		buckets.POST("/create-bucket", handler.CreateBucket)
 		// List all buckets
 		buckets.GET("", handler.ListBuckets)
 		// // Get bucket info

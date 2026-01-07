@@ -6,6 +6,17 @@ import (
 	"time"
 )
 
+
+
+ 
+
+type JWTValidator interface {
+	Validate(token string) (*Claims, error)
+}
+
+
+
+
 type StoragePort interface {
 	SaveObject(ctx context.Context, bucket, key string, data []byte, metadata map[string]string) error
 	GetObject(ctx context.Context, bucket, key string) ([]byte, error)
@@ -42,6 +53,13 @@ type RepositoryPort interface {
 	ListBuckets(ctx context.Context) ([]Bucket, error)
 	UpdateBucket(ctx context.Context, bucket *Bucket) (*Bucket, error)
 	DeleteBucket(ctx context.Context, bucketId string) error
+
+	// Users
+	SaveUser(ctx context.Context, user *User) (*User, error)
+	GetUserByID(ctx context.Context, id string) (*User, error)
+	GetUserByEmail(ctx context.Context, email string) (*User, error)
+	UpdateUser(ctx context.Context, user *User) error
+	DeleteUser(ctx context.Context, id string) error
 
 	// Presigned URLs
 	SavePresignedURL(ctx context.Context, presignedUrl *PresignedURL) error
