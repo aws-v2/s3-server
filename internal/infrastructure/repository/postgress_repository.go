@@ -770,7 +770,7 @@ func (r *PostgresRepository) ListBuckets(ctx context.Context) ([]domain.Bucket, 
 	defer cancel()
 
 	query := `
-	SELECT id, name, owner_id, created_at, updated_at
+	SELECT id, name, owner_id, created_at, updated_at,region , bucket_type
 	FROM buckets
 	ORDER BY created_at DESC
 `
@@ -790,6 +790,9 @@ func (r *PostgresRepository) ListBuckets(ctx context.Context) ([]domain.Bucket, 
 			&bucket.OwnerID,
 			&bucket.CreatedAt,
 			&bucket.UpdatedAt,
+			&bucket.Region,
+			&bucket.BucketType,
+			
 		)
 
 		if err != nil {
@@ -878,6 +881,16 @@ func (r *PostgresRepository) Ping(ctx context.Context) error {
 	defer cancel()
 
 	return r.db.PingContext(ctx)
+}
+
+// DeleteFilesByBucket removes all file records associated with a bucket ID
+func (r *PostgresRepository) DeleteFilesByBucket(ctx context.Context, bucketID string) error {
+	const query = `DELETE FROM files WHERE bucket_id = $1`
+	_, err := r.db.ExecContext(ctx, query, bucketID)
+	if err != nil {
+		return fmt.Errorf("failed to delete files by bucket: %w", err)
+	}
+	return nil
 }
 
 // Stats returns database connection pool statistics

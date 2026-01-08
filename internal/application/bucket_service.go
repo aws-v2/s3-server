@@ -112,6 +112,8 @@ func (s *BucketService) GetBucket(ctx context.Context, bucketID string) (*dto.Ge
 		BucketID:  bucket.ID,
 		Name:      bucket.Name,
 		CreatedAt: bucket.CreatedAt,
+		BucketType: bucket.BucketType,
+		Region: bucket.Region,
 	}, nil
 }
 
@@ -169,6 +171,25 @@ func (s *BucketService) DeleteBucket(ctx context.Context, bucketID string) error
 
 		return fmt.Errorf("failed to delete bucket: %w", err)
 	}
+	return nil
+}
+
+func (s *BucketService) EmptyBucket(ctx context.Context, bucketID string) error {
+	bucket, err := s.repo.GetBucketByID(ctx, bucketID)
+	if err != nil {
+		return fmt.Errorf("bucket not found: %w", err)
+	}
+
+	// 1. Delete all objects from storage
+	if err := s.storage.EmptyBucket(ctx, bucket.Name); err != nil {
+		return fmt.Errorf("failed to empty storage: %w", err)
+	}
+
+	// 2. Delete all file metadata from repository
+	if err := s.repo.DeleteFilesByBucket(ctx, bucketID); err != nil {
+		return fmt.Errorf("failed to delete file metadata: %w", err)
+	}
+
 	return nil
 }
 

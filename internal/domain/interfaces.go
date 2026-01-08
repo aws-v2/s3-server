@@ -6,16 +6,9 @@ import (
 	"time"
 )
 
-
-
- 
-
 type JWTValidator interface {
 	Validate(token string) (*Claims, error)
 }
-
-
-
 
 type StoragePort interface {
 	SaveObject(ctx context.Context, bucket, key string, data []byte, metadata map[string]string) error
@@ -25,7 +18,7 @@ type StoragePort interface {
 	DeleteBucket(ctx context.Context, bucketId string) error
 
 	SetBucketVersioning(ctx context.Context, name string, enabled bool) error
-	RenameBucket(ctx context.Context, oldName string, newName string)error
+	RenameBucket(ctx context.Context, oldName string, newName string) error
 
 	CopyObject(
 		ctx context.Context,
@@ -35,6 +28,7 @@ type StoragePort interface {
 		dstKey string,
 	) error
 	GetBucketVersioning(ctx context.Context, bucketId string) (*dto.VersioningOutput, error)
+	EmptyBucket(ctx context.Context, bucketName string) error
 }
 
 type RepositoryPort interface {
@@ -107,18 +101,18 @@ type RepositoryPort interface {
 		TotalSize   int64
 	}, error)
 	SaveAccessLog(ctx context.Context, log *AccessLog) error
-// Multipart Uploads
-SaveMultipartUpload(ctx context.Context, upload *MultipartUpload) error
-GetMultipartUploadByUploadID(ctx context.Context, uploadID string) (*MultipartUpload, error)
-UpdateMultipartUpload(ctx context.Context, upload *MultipartUpload) error
-ListMultipartUploadsByBucket(ctx context.Context, bucketID string) ([]MultipartUpload, error)
-DeleteMultipartUpload(ctx context.Context, uploadID string) error
+	// Multipart Uploads
+	SaveMultipartUpload(ctx context.Context, upload *MultipartUpload) error
+	GetMultipartUploadByUploadID(ctx context.Context, uploadID string) (*MultipartUpload, error)
+	UpdateMultipartUpload(ctx context.Context, upload *MultipartUpload) error
+	ListMultipartUploadsByBucket(ctx context.Context, bucketID string) ([]MultipartUpload, error)
+	DeleteMultipartUpload(ctx context.Context, uploadID string) error
 
-// Multipart Parts
-SaveMultipartPart(ctx context.Context, part *dto.MultipartPart) error
-GetMultipartPart(ctx context.Context, uploadID string, partNumber int) (*dto.MultipartPart, error)
-ListMultipartParts(ctx context.Context, uploadID string) ([]*dto.MultipartPart, error)
-DeleteMultipartParts(ctx context.Context, uploadID string) error
+	// Multipart Parts
+	SaveMultipartPart(ctx context.Context, part *dto.MultipartPart) error
+	GetMultipartPart(ctx context.Context, uploadID string, partNumber int) (*dto.MultipartPart, error)
+	ListMultipartParts(ctx context.Context, uploadID string) ([]*dto.MultipartPart, error)
+	DeleteMultipartParts(ctx context.Context, uploadID string) error
 
 	// 🔐 Policy-related operations
 	IncrementPolicyVersionAndUpdateBucket(ctx context.Context, bucket *Bucket) error
@@ -127,13 +121,10 @@ DeleteMultipartParts(ctx context.Context, uploadID string) error
 	SetBucketVersioning(ctx context.Context, bucketID string, status VersioningStatus) error
 	GetBucketVersioning(ctx context.Context, bucketID string) (VersioningStatus, error)
 
-
-GetLifecycleRules(ctx context.Context, bucketID string) ([]LifecycleRule, error)
-    UpsertLifecycleRule(ctx context.Context, bucketID string, ruleJSON []byte) error
-
-
+	GetLifecycleRules(ctx context.Context, bucketID string) ([]LifecycleRule, error)
+	UpsertLifecycleRule(ctx context.Context, bucketID string, ruleJSON []byte) error
+	DeleteFilesByBucket(ctx context.Context, bucketID string) error
 }
-
 
 type Logger interface {
 	Info(ctx context.Context, msg string, fields map[string]interface{})

@@ -27,9 +27,9 @@ func (m *MinIOAdapter) GetBucketVersioning(ctx context.Context, bucketName strin
 	if err != nil {
 		return nil, fmt.Errorf("failed to get versioning: %w", err)
 	}
-	
+
 	enabled := config.Status == minio.Enabled
-	
+
 	return &dto.VersioningOutput{
 		Enabled: enabled,
 		Status:  string(config.Status),
@@ -65,103 +65,70 @@ func (m *MinIOAdapter) CreateBucket(ctx context.Context, name string) (string, e
 	return name, nil
 }
 
-
-
-
-
-
-
-
-
-
-
 func (m *MinIOAdapter) RenameBucket(ctx context.Context, oldName, newName string) error {
-    // Step 1: Create the new bucket (if it doesn't already exist)
-    err := m.client.MakeBucket(ctx, newName, minio.MakeBucketOptions{})
-    if err != nil {
-        exists, errBucketExists := m.client.BucketExists(ctx, newName)
-        if errBucketExists != nil {
-            return fmt.Errorf("failed to check if new bucket exists: %w", errBucketExists)
-        }
-        if !exists {
-            return fmt.Errorf("failed to create new bucket: %w", err)
-        }
-    }
+	// Step 1: Create the new bucket (if it doesn't already exist)
+	err := m.client.MakeBucket(ctx, newName, minio.MakeBucketOptions{})
+	if err != nil {
+		exists, errBucketExists := m.client.BucketExists(ctx, newName)
+		if errBucketExists != nil {
+			return fmt.Errorf("failed to check if new bucket exists: %w", errBucketExists)
+		}
+		if !exists {
+			return fmt.Errorf("failed to create new bucket: %w", err)
+		}
+	}
 
-    // Step 2: Copy all objects from oldName → newName
-    objectCh := m.client.ListObjects(ctx, oldName, minio.ListObjectsOptions{Recursive: true})
-    for object := range objectCh {
-        if object.Err != nil {
-            return fmt.Errorf("error listing object: %w", object.Err)
-        }
+	// Step 2: Copy all objects from oldName → newName
+	objectCh := m.client.ListObjects(ctx, oldName, minio.ListObjectsOptions{Recursive: true})
+	for object := range objectCh {
+		if object.Err != nil {
+			return fmt.Errorf("error listing object: %w", object.Err)
+		}
 
-        src := minio.CopySrcOptions{
-            Bucket: oldName,
-            Object: object.Key,
-        }
-        dst := minio.CopyDestOptions{
-            Bucket: newName,
-            Object: object.Key,
-        }
+		src := minio.CopySrcOptions{
+			Bucket: oldName,
+			Object: object.Key,
+		}
+		dst := minio.CopyDestOptions{
+			Bucket: newName,
+			Object: object.Key,
+		}
 
-        _, err := m.client.CopyObject(ctx, dst, src)
-        if err != nil {
-            return fmt.Errorf("failed to copy object %s: %w", object.Key, err)
-        }
-    }
+		_, err := m.client.CopyObject(ctx, dst, src)
+		if err != nil {
+			return fmt.Errorf("failed to copy object %s: %w", object.Key, err)
+		}
+	}
 
-    // Step 3: Delete objects in the old bucket
-    delCh := make(chan minio.ObjectInfo)
+	// Step 3: Delete objects in the old bucket
+	delCh := make(chan minio.ObjectInfo)
 
-    // Start a goroutine to feed object keys to delete
-    go func() {
-        defer close(delCh)
-        oldObjects := m.client.ListObjects(ctx, oldName, minio.ListObjectsOptions{Recursive: true})
-        for object := range oldObjects {
-            if object.Err == nil {
-                delCh <- object
-            }
-        }
-    }()
+	// Start a goroutine to feed object keys to delete
+	go func() {
+		defer close(delCh)
+		oldObjects := m.client.ListObjects(ctx, oldName, minio.ListObjectsOptions{Recursive: true})
+		for object := range oldObjects {
+			if object.Err == nil {
+				delCh <- object
+			}
+		}
+	}()
 
-    // Remove all objects in one batch operation
-    for rErr := range m.client.RemoveObjects(ctx, oldName, delCh, minio.RemoveObjectsOptions{}) {
-        if rErr.Err != nil {
-            return fmt.Errorf("failed to remove object %s: %w", rErr.ObjectName, rErr.Err)
-        }
-    }
+	// Remove all objects in one batch operation
+	for rErr := range m.client.RemoveObjects(ctx, oldName, delCh, minio.RemoveObjectsOptions{}) {
+		if rErr.Err != nil {
+			return fmt.Errorf("failed to remove object %s: %w", rErr.ObjectName, rErr.Err)
+		}
+	}
 
-    // Step 4: Delete the old bucket itself
-    err = m.client.RemoveBucket(ctx, oldName)
-    if err != nil {
-        return fmt.Errorf("failed to remove old bucket: %w", err)
-    }
- 
-    return nil
+	// Step 4: Delete the old bucket itself
+	err = m.client.RemoveBucket(ctx, oldName)
+	if err != nil {
+		return fmt.Errorf("failed to remove old bucket: %w", err)
+	}
+
+	return nil
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 func (e BucketAlreadyExists) Error() string {
 	return fmt.Sprintf("bucket %s already exists", e.Name)
@@ -223,9 +190,9 @@ func (m *MinIOAdapter) GetObject(ctx context.Context, bucket, key string) ([]byt
 	return data, nil
 }
 
-func (m *MinIOAdapter) DeleteBucket(ctx context.Context, name string) error {
-	// List and delete all objects in the bucket
-	objectsCh := m.client.ListObjects(ctx, name, minio.ListObjectsOptions{
+// EmptyBucket removes all objects from the specified bucket
+func (m *MinIOAdapter) EmptyBucket(ctx context.Context, bucketName string) error {
+	objectsCh := m.client.ListObjects(ctx, bucketName, minio.ListObjectsOptions{
 		Recursive: true,
 	})
 
@@ -233,14 +200,19 @@ func (m *MinIOAdapter) DeleteBucket(ctx context.Context, name string) error {
 		if object.Err != nil {
 			return fmt.Errorf("error listing objects: %w", object.Err)
 		}
-		
-		err := m.client.RemoveObject(ctx, name, object.Key, minio.RemoveObjectOptions{})
+
+		err := m.client.RemoveObject(ctx, bucketName, object.Key, minio.RemoveObjectOptions{})
 		if err != nil {
 			return fmt.Errorf("error removing object %s: %w", object.Key, err)
 		}
 	}
+	return nil
+}
 
-	// Now remove the empty bucket
+func (m *MinIOAdapter) DeleteBucket(ctx context.Context, name string) error {
+	if err := m.EmptyBucket(ctx, name); err != nil {
+		return err
+	}
 	return m.client.RemoveBucket(ctx, name)
 }
 

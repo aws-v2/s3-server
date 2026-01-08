@@ -86,7 +86,7 @@ func (h *BucketHandler) ListBuckets(c *gin.Context) {
 	})
 }
 
-// ListBuckets handles listing all available buckets
+
 // GET /:bucketId
 func (h *BucketHandler) GetBucketInfo(c *gin.Context) {
 	bucketID := c.Param("bucketId")
@@ -140,6 +140,22 @@ func (h *BucketHandler) DeleteBucket(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusNoContent, nil)
+}
+
+// POST /buckets/:bucketId/empty
+func (h *BucketHandler) EmptyBucket(c *gin.Context) {
+	bucketID := c.Param("bucketId")
+
+	if err := h.bucketService.EmptyBucket(c.Request.Context(), bucketID); err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "bucket emptied successfully"})
 }
 
 // // GetBucketStats handles getting bucket statistics

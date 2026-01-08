@@ -15,6 +15,8 @@ type GetBucketOutput struct {
 	BucketID  string    `json:"bucket_id"`
 	Name      string    `json:"name"`
 	CreatedAt time.Time `json:"created_at"`
+	Region    string    `json:"region"`
+	BucketType string    `json:"bucket_type"`
 }
 
 type UpdateBucketInput struct {

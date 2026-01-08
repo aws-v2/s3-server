@@ -118,8 +118,6 @@ func registerObjectRoutes(v1 *gin.RouterGroup, handler *HandlerForFiles, validat
 func registerBucketRoutes(v1 *gin.RouterGroup, handler *BucketHandler, validator middleware.APIKeyValidator) {
 	buckets := v1.Group("/buckets")
 
-
-
 	// buckets.Use(middleware.APIKeyAuthMiddleware(validator))------------>>IAM
 	{
 		// Create new bucket
@@ -146,8 +144,10 @@ func registerBucketRoutes(v1 *gin.RouterGroup, handler *BucketHandler, validator
 		buckets.PUT("/:bucketId/lifecycle", handler.SetBucketLifecycle)
 		buckets.GET("/:bucketId/lifecycle", handler.GetBucketLifecycle)
 
+		// Empty bucket
+		buckets.POST("/:bucketId/empty", handler.EmptyBucket)
 	}
-}
+} 
 
 // TODO: IMPLEMENT MILTIPART FOR PRESIGNED URLS
 func registerPresignRoutes(v1 *gin.RouterGroup, handler *PresignHandler) {
