@@ -81,8 +81,33 @@ type BucketPolicyOutput struct {
 
 
 type CreateBucketInput struct {
-	Name string `json:"name"`
-	OwnerId string 	`json:"owner_id"`
+	Name              string            `json:"name"`
+	Region            string            `json:"region"`
+	BucketType        string            `json:"bucketType"`
+	ObjectOwnership   string            `json:"objectOwnership"`
+	BlockPublicAccess BlockPublicAccess `json:"blockPublicAccess"`
+	Versioning        bool              `json:"versioning"`
+	Tags              []Tag             `json:"tags"`
+	Encryption        BucketEncryption  `json:"encryption"`
+	ObjectLock        bool              `json:"objectLock"`
+	OwnerId           string            `json:"owner_id"`
+}
+
+type BlockPublicAccess struct {
+	BlockPublicAcls       bool `json:"blockPublicAcls"`
+	IgnorePublicAcls      bool `json:"ignorePublicAcls"`
+	BlockPublicPolicy     bool `json:"blockPublicPolicy"`
+	RestrictPublicBuckets bool `json:"restrictPublicBuckets"`
+}
+
+type Tag struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+type BucketEncryption struct {
+	Type             string `json:"type"`
+	BucketKeyEnabled bool   `json:"bucketKeyEnabled"`
 }
 
 

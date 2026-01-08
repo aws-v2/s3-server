@@ -25,14 +25,13 @@ type DeleteFileInput struct {
 }
 
 func (s *DeleteService) DeleteFile(ctx context.Context, input DeleteFileInput) error {
-	file, errors :=s.repository.GetFileByID(ctx, input.FileID)
-	if errors != nil{
-		return fmt.Errorf("Object with id %w does not exist", input.FileID)
-
+	file, err := s.repository.GetFileByID(ctx, input.FileID)
+	if err != nil {
+		return fmt.Errorf("object with id %s does not exist: %w", input.FileID, err)
 	}
-	
+
 	// 1. Delete from storage (MinIO)
-	err := s.storage.DeleteObject(ctx, input.BucketID, file.Key)
+	err = s.storage.DeleteObject(ctx, input.BucketID, file.Key)
 	if err != nil {
 		return fmt.Errorf("failed to delete object from storage: %w", err)
 	}

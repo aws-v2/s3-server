@@ -12,7 +12,25 @@ Content-Type: application/json
 
 {
   "name": "{{BucketName}}",
-  "owner_id": "550e8400-e29b-41d4-a716-446655440000" 
+  "owner_id": "550e8400-e29b-41d4-a716-446655440000",
+  "region": "us-east-1",
+  "bucketType": "General Purpose",
+  "objectOwnership": "BucketOwnerEnforced",
+  "blockPublicAccess": {
+    "blockPublicAcls": true,
+    "ignorePublicAcls": true,
+    "blockPublicPolicy": true,
+    "restrictPublicBuckets": true
+  },
+  "versioning": true,
+  "tags": [
+      { "key": "env", "value": "dev" }
+  ],
+  "encryption": {
+      "type": "AES256",
+      "bucketKeyEnabled": true
+  },
+  "objectLock": false
 }
 
 ### GET BUCKET INFO

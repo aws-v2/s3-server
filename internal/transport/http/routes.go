@@ -26,13 +26,12 @@ type Handlers struct {
 
 // RegisterRoutes registers all application routes
 func RegisterRoutes(router *gin.Engine, handlers *Handlers) {
-	// API v1 group
-	v1 := router.Group("/api/v1")
+	// API group (Gateway strips /api/v1)
+	v1 := router.Group("/")
 
 	// Chain authentication middlewares: try API key first, then JWT
-	v1.Use(middleware.APIKeyAuthMiddleware(handlers.Validator))
-	v1.Use(middleware.BearerAuthMiddleware(handlers.JWTValidator))
-
+	// v1.Use(middleware.APIKeyAuthMiddleware(handlers.Validator))------------>>IAM
+	// v1.Use(middleware.BearerAuthMiddleware(handlers.JWTValidator))------------>>IAM
 
 	// Track all V1 requests
 	v1.Use(handlers.Analytics.TrackRequestMiddleware())
@@ -83,7 +82,7 @@ func registerHealthRoutes(v1 *gin.RouterGroup, handler *HandlerForHealth) {
 func registerObjectRoutes(v1 *gin.RouterGroup, handler *HandlerForFiles, validator middleware.APIKeyValidator) {
 	object := v1.Group("/files")
 
-	object.Use(middleware.APIKeyAuthMiddleware(validator))
+	// object.Use(middleware.APIKeyAuthMiddleware(validator))------------>>IAM
 
 	{
 		// Upload file to bucket
@@ -119,7 +118,9 @@ func registerObjectRoutes(v1 *gin.RouterGroup, handler *HandlerForFiles, validat
 func registerBucketRoutes(v1 *gin.RouterGroup, handler *BucketHandler, validator middleware.APIKeyValidator) {
 	buckets := v1.Group("/buckets")
 
-	buckets.Use(middleware.APIKeyAuthMiddleware(validator))
+
+
+	// buckets.Use(middleware.APIKeyAuthMiddleware(validator))------------>>IAM
 	{
 		// Create new bucket
 		buckets.POST("/create-bucket", handler.CreateBucket)

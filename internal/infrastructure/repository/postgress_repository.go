@@ -707,17 +707,43 @@ func (r *PostgresRepository) SaveBucket(ctx context.Context, bucket *domain.Buck
 	bucket.CreatedAt = now
 	bucket.UpdatedAt = now
 
+	// Marshal complex types
+	bpaJSON, err := json.Marshal(bucket.BlockPublicAccess)
+	if err != nil {
+		return domain.Bucket{}, fmt.Errorf("failed to marshal block public access: %w", err)
+	}
+	tagsJSON, err := json.Marshal(bucket.Tags)
+	if err != nil {
+		return domain.Bucket{}, fmt.Errorf("failed to marshal tags: %w", err)
+	}
+	encJSON, err := json.Marshal(bucket.Encryption)
+	if err != nil {
+		return domain.Bucket{}, fmt.Errorf("failed to marshal encryption: %w", err)
+	}
+
 	query := `
-		INSERT INTO buckets (id, name, owner_id, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO buckets (
+			id, name, owner_id, region, bucket_type, object_ownership, 
+			block_public_access, versioning_status, tags, encryption, 
+			object_lock, created_at, updated_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 		RETURNING id, name, owner_id, created_at, updated_at
 	`
 
 	var result domain.Bucket
-	err := r.db.QueryRowContext(ctx, query,
+	err = r.db.QueryRowContext(ctx, query,
 		bucket.ID,
 		bucket.Name,
 		bucket.OwnerID,
+		bucket.Region,
+		bucket.BucketType,
+		bucket.ObjectOwnership,
+		bpaJSON,
+		bucket.VersioningStatus,
+		tagsJSON,
+		encJSON,
+		bucket.ObjectLock,
 		bucket.CreatedAt,
 		bucket.UpdatedAt,
 	).Scan(

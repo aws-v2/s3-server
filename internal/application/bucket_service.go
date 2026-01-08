@@ -31,7 +31,7 @@ func NewBucketService(repo domain.RepositoryPort, storage domain.StoragePort) *B
 	}
 }
 func (e *BucketAlreadyExists) Error() string {
-    return fmt.Sprintf("bucket %s already exists", e.Name)
+	return fmt.Sprintf("bucket %s already exists", e.Name)
 }
 
 func (s *BucketService) CreateBucket(ctx context.Context, input dto.CreateBucketInput) (*dto.CreateBucketOutput, error) {
@@ -49,12 +49,43 @@ func (s *BucketService) CreateBucket(ctx context.Context, input dto.CreateBucket
 		return nil, fmt.Errorf("%w", err)
 	}
 
-	// Create bucket metadata
+	// Determine versioning status
+	vStatus := domain.VersioningSuspended
+	if input.Versioning {
+		vStatus = domain.VersioningEnabled
+	}
+
+	// Map tags
+	var tags []domain.Tag
+	for _, t := range input.Tags {
+		tags = append(tags, domain.Tag{
+			Key:   t.Key,
+			Value: t.Value,
+		})
+	}
+
 	bucket := &domain.Bucket{
-		ID:        bucketId,
-		Name:      input.Name,
-		OwnerID:   input.OwnerId,
-		CreatedAt: time.Now(),
+		ID:              bucketId,
+		Name:            input.Name,
+		OwnerID:         input.OwnerId,
+		Region:          input.Region,
+		BucketType:      input.BucketType,
+		ObjectOwnership: input.ObjectOwnership,
+		BlockPublicAccess: domain.BlockPublicAccess{
+			BlockPublicAcls:       input.BlockPublicAccess.BlockPublicAcls,
+			IgnorePublicAcls:      input.BlockPublicAccess.IgnorePublicAcls,
+			BlockPublicPolicy:     input.BlockPublicAccess.BlockPublicPolicy,
+			RestrictPublicBuckets: input.BlockPublicAccess.RestrictPublicBuckets,
+		},
+		VersioningStatus: vStatus,
+		Tags:             tags,
+		Encryption: domain.BucketEncryption{
+			Type:             input.Encryption.Type,
+			BucketKeyEnabled: input.Encryption.BucketKeyEnabled,
+		},
+		ObjectLock: input.ObjectLock,
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
 	}
 
 	// Save metadata in repository
@@ -70,7 +101,6 @@ func (s *BucketService) CreateBucket(ctx context.Context, input dto.CreateBucket
 		CreatedAt: bucket.CreatedAt,
 	}, nil
 }
-
 
 func (s *BucketService) GetBucket(ctx context.Context, bucketID string) (*dto.GetBucketOutput, error) {
 	bucket, err := s.repo.GetBucketByID(ctx, bucketID)
@@ -99,10 +129,10 @@ func (s *BucketService) UpdateBucket(ctx context.Context, bucketID string, input
 		bucket.Name = input.Name
 		bucket.UpdatedAt = time.Now()
 	}
-error:=s.storage.RenameBucket(ctx, bucket.Name, input.Name)
-if error != nil {
-    return nil, fmt.Errorf("failed to rename bucket: %w", err)
-}
+	error := s.storage.RenameBucket(ctx, bucket.Name, input.Name)
+	if error != nil {
+		return nil, fmt.Errorf("failed to rename bucket: %w", err)
+	}
 
 	updated, err := s.repo.UpdateBucket(ctx, &bucket)
 	if err != nil {
@@ -122,21 +152,16 @@ func (s *BucketService) DeleteBucket(ctx context.Context, bucketID string) error
 		return fmt.Errorf("failed to check files: %w", err)
 	}
 
-
-
 	if len(files) > 0 {
 		return fmt.Errorf("cannot delete bucket with files")
 	}
 	bucket, err := s.repo.GetBucketByName(ctx, bucketID)
- 
 
 	if err != nil {
 		return fmt.Errorf("bucket not found: %w", err)
 	}
 
-
-	if err := s.storage.DeleteBucket(ctx,bucket.Name		); err != nil {
-
+	if err := s.storage.DeleteBucket(ctx, bucket.Name); err != nil {
 
 		return fmt.Errorf("failed to delete from storage: %w", err)
 	}
@@ -152,12 +177,12 @@ func (s *BucketService) GetBucketStats(ctx context.Context, bucketID string) (*d
 	if err != nil {
 		return nil, fmt.Errorf("failed to get files: %w", err)
 	}
-	
+
 	var totalSize int64
 	for _, f := range files {
 		totalSize += f.Size
 	}
-	
+
 	return &dto.BucketStatsOutput{
 		BucketID:   bucketID,
 		TotalFiles: int64(len(files)),
@@ -194,33 +219,33 @@ func (s *BucketService) UpdateBucketPolicy(ctx context.Context, bucketID string,
 		return errors.New("forbidden: only bucket owner or admin can update policy")
 	}
 
-// Convert DTO -> domain.Policy
-policy := domain.Policy{
-	Version: input.Version,
-	Statement: []domain.Statement{
-		{
-			Effect:    domain.Effect(input.Effect),
-			Action:    make([]domain.Action, 0, len(input.Actions)),
-			Resource:  input.Resources,
-			Principal: make([]domain.Principal, 0, len(input.Principals)),
-			Condition: input.Conditions,
+	// Convert DTO -> domain.Policy
+	policy := domain.Policy{
+		Version: input.Version,
+		Statement: []domain.Statement{
+			{
+				Effect:    domain.Effect(input.Effect),
+				Action:    make([]domain.Action, 0, len(input.Actions)),
+				Resource:  input.Resources,
+				Principal: make([]domain.Principal, 0, len(input.Principals)),
+				Condition: input.Conditions,
+			},
 		},
-	},
-}
+	}
 
-// convert string slices to typed slices
-for _, a := range input.Actions {
-	policy.Statement[0].Action = append(policy.Statement[0].Action, domain.Action(a))
-}
+	// convert string slices to typed slices
+	for _, a := range input.Actions {
+		policy.Statement[0].Action = append(policy.Statement[0].Action, domain.Action(a))
+	}
 
-for _, p := range input.Principals {
-	policy.Statement[0].Principal = append(policy.Statement[0].Principal, domain.Principal(p))
-}
+	for _, p := range input.Principals {
+		policy.Statement[0].Principal = append(policy.Statement[0].Principal, domain.Principal(p))
+	}
 
-// validate
-if err := policy.Validate(); err != nil {
-	return fmt.Errorf("invalid policy: %w", err)
-}
+	// validate
+	if err := policy.Validate(); err != nil {
+		return fmt.Errorf("invalid policy: %w", err)
+	}
 
 	// set and save; increment version
 	bucket.Policy = &policy
@@ -228,7 +253,6 @@ if err := policy.Validate(); err != nil {
 	if err := s.repo.IncrementPolicyVersionAndUpdateBucket(ctx, &bucket); err != nil {
 		return fmt.Errorf("failed to save policy: %w", err)
 	}
-
 
 	// audit / history - optional
 	_ = s.repo.AppendPolicyHistory(ctx, bucketID, &policy, actor)
@@ -258,8 +282,6 @@ func (s *BucketService) SetBucketVersioning(ctx context.Context, bucketID string
 
 	return nil
 }
-
- 
 
 // isAdmin checks whether the actor (like "user:abc123") is an admin.
 // In MVP mode, we load admin IDs from an env var: ADMIN_USERS=user:abc123,user:def456
@@ -291,11 +313,6 @@ func (s *BucketService) GetBucketVersioning(ctx context.Context, bucketID string
 	}, nil
 }
 
-
-
-
-
-
 func (s *BucketService) SetBucketLifecycle(ctx context.Context, bucketID string, input dto.SetLifecycleInput) error {
 	for _, ruleInput := range input.Rules {
 		// Map DTO to domain
@@ -314,7 +331,7 @@ func (s *BucketService) SetBucketLifecycle(ctx context.Context, bucketID string,
 			return fmt.Errorf("failed to marshal rule: %w", err)
 		}
 
-if err := 		s.repo.UpsertLifecycleRule(ctx, bucketID, ruleJSON); err != nil {
+		if err := s.repo.UpsertLifecycleRule(ctx, bucketID, ruleJSON); err != nil {
 			return fmt.Errorf("failed to save lifecycle rule: %w", err)
 		}
 	}

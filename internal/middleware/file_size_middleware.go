@@ -8,14 +8,8 @@ import (
 
 func MaxFileSizeMiddleware(maxSize int64) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// Use MaxBytesReader to limit the size of the whole request body
 		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxSize)
-
-		file, _, err := c.Request.FormFile("file")
-		if err != nil {
-			c.AbortWithStatusJSON(400, gin.H{"error": "File too large or missing"})
-			return
-		}
-		file.Close() // Close immediately, actual handler will reopen
 		c.Next()
 	}
 }

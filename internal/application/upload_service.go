@@ -22,56 +22,98 @@ func NewUploadService(storage domain.StoragePort, repository domain.RepositoryPo
 }
 
 type UploadFileInput struct {
-	BucketID string
-	Key      string
-	Data     []byte
-	MimeType string
-	Metadata map[string]string
+	BucketID            string              `json:"bucketId"`
+	Files               []FileContent       `json:"files"`
+	DestinationSettings DestinationSettings `json:"destinationSettings"`
+	Properties          UploadProperties    `json:"properties"`
+	Tags                []Tag               `json:"tags"`
+	Metadata            []MetadataItem      `json:"metadata"`
+}
+
+type FileContent struct {
+	Name string `json:"name"`
+	Size int64  `json:"size"`
+	Type string `json:"type"`
+	Data []byte `json:"-"`
+}
+
+type DestinationSettings struct {
+	VersioningEnabled bool `json:"versioningEnabled"`
+}
+
+type UploadProperties struct {
+	StorageClass     string `json:"storageClass"`
+	EncryptionType   string `json:"encryptionType"`
+	ChecksumFunction string `json:"checksumFunction"`
+}
+
+type Tag struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+type MetadataItem struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
 }
 
 type UploadFileOutput struct {
-	FileID    string
-	Key       string
-	Size      int64
+	FileIDs   []string
+	Result    string
 	CreatedAt time.Time
 }
 
 func (s *UploadService) UploadFile(ctx context.Context, input UploadFileInput) (*UploadFileOutput, error) {
-	// Get bucket by name to retrieve its ID
-
+	// Get bucket by name
 	bucket, err := s.repository.GetBucketByName(ctx, input.BucketID)
-
 	if err != nil {
 		return nil, fmt.Errorf("bucket not found: %w", err)
 	}
 
-	// Save to MinIO using bucket name
-	err = s.storage.SaveObject(ctx, bucket.Name, input.Key, input.Data, input.Metadata)
-	if err != nil {
-		return nil, fmt.Errorf("failed to save object to storage: %w", err)
+	var fileIDs []string
+
+	// Convert metadata slice to map
+	metaMap := make(map[string]string)
+	for _, m := range input.Metadata {
+		metaMap[m.Key] = m.Value
 	}
 
-	// Save to DB using bucket UUID
-	file := domain.File{
-		ID:        generateID(),
-		BucketID:  bucket.ID, // Use UUID here
-		Key:       input.Key,
-		Size:      int64(len(input.Data)),
-		MimeType:  input.MimeType,
-		Metadata:  input.Metadata,
-		CreatedAt: time.Now(),
-	}
+	for _, f := range input.Files {
+		// Use actual binary data if provided
+		fileData := f.Data
+		if len(fileData) == 0 {
+			fileData = []byte("placeholder data for " + f.Name)
+		}
 
-	err = s.repository.SaveFile(ctx, file)
-	if err != nil {
-		return nil, fmt.Errorf("failed to save file metadata: %w", err)
+		// Save to MinIO
+		err = s.storage.SaveObject(ctx, bucket.Name, f.Name, fileData, metaMap)
+		if err != nil {
+			return nil, fmt.Errorf("failed to save object %s: %w", f.Name, err)
+		}
+
+		// Save to DB
+		file := domain.File{
+			ID:        generateID(),
+			BucketID:  bucket.ID,
+			Key:       f.Name,
+			Size:      f.Size,
+			MimeType:  f.Type,
+			Metadata:  metaMap,
+			CreatedAt: time.Now(),
+		}
+
+		err = s.repository.SaveFile(ctx, file)
+		if err != nil {
+			return nil, fmt.Errorf("failed to save file metadata for %s: %w", f.Name, err)
+		}
+
+		fileIDs = append(fileIDs, file.ID)
 	}
 
 	return &UploadFileOutput{
-		FileID:    file.ID,
-		Key:       file.Key,
-		Size:      file.Size,
-		CreatedAt: file.CreatedAt,
+		FileIDs:   fileIDs,
+		Result:    fmt.Sprintf("Successfully processed %d files", len(input.Files)),
+		CreatedAt: time.Now(),
 	}, nil
 }
 

@@ -32,26 +32,26 @@ import (
 
 // EurekaConfig holds Eureka registration configuration
 type EurekaConfig struct {
-	ServerURL    string
-	AppName      string
-	HostName     string
-	IPAddr       string
-	Port         int
-	VipAddress   string
-	InstanceID   string
+	ServerURL         string
+	AppName           string
+	HostName          string
+	IPAddr            string
+	Port              int
+	VipAddress        string
+	InstanceID        string
 	HeartbeatInterval time.Duration
 }
 
 // getEurekaConfig reads Eureka configuration from environment variables
 func getEurekaConfig() *EurekaConfig {
 	return &EurekaConfig{
-		ServerURL:    getEnv("EUREKA_SERVER_URL", "http://localhost:8761/eureka"),
-		AppName:      getEnv("EUREKA_APP_NAME", "S3-SERVICE"),
-		HostName:     getEnv("EUREKA_HOSTNAME", "s3-service:8082"),
-		IPAddr:       getEnv("EUREKA_IP_ADDR", "10.0.0.15"),
-		Port:         getEnvInt("SERVER_PORT", 8082),
-		VipAddress:   getEnv("EUREKA_VIP_ADDRESS", "s3-service"),
-		InstanceID:   getEnv("EUREKA_INSTANCE_ID", "s3-service.local:8082"),
+		ServerURL:         getEnv("EUREKA_SERVER_URL", "http://localhost:8761/eureka"),
+		AppName:           getEnv("EUREKA_APP_NAME", "S3-SERVICE"),
+		HostName:          getEnv("EUREKA_HOSTNAME", "localhost"), // ✅ Default to localhost for local dev
+		IPAddr:            getEnv("EUREKA_IP_ADDR", "127.0.0.1"),
+		Port:              getEnvInt("SERVER_PORT", 8082),
+		VipAddress:        getEnv("EUREKA_VIP_ADDRESS", "s3-service"),
+		InstanceID:        getEnv("EUREKA_INSTANCE_ID", "s3-service:8082"), // ✅ This format is OK
 		HeartbeatInterval: getEnvDuration("EUREKA_HEARTBEAT_INTERVAL", 30*time.Second),
 	}
 }
@@ -60,11 +60,12 @@ func getEurekaConfig() *EurekaConfig {
 func registerWithEureka(config *EurekaConfig) error {
 	instance := map[string]interface{}{
 		"instance": map[string]interface{}{
-			"hostName": config.HostName,
-			"app":      config.AppName,
-			"ipAddr":   config.IPAddr,
+			"instanceId": config.InstanceID,
+			"hostName":   config.HostName,
+			"app":        config.AppName,
+			"ipAddr":     config.IPAddr,
 			"vipAddress": config.VipAddress,
-			"status":   "UP",
+			"status":     "UP",
 			"port": map[string]interface{}{
 				"$":        config.Port,
 				"@enabled": "true",
@@ -166,24 +167,21 @@ func deregisterFromEureka(config *EurekaConfig) error {
 	return nil
 }
 
-
- 
-
 func main() {
-     eurekaConfig := getEurekaConfig()
-    
-    // Register with retries
-    for i := 0; i < 3; i++ {
-        if err := registerWithEureka(eurekaConfig); err != nil {
-            log.Printf("⚠️  Eureka registration attempt %d failed: %v", i+1, err)
-            time.Sleep(5 * time.Second)
-        } else {
-            break
-        }
-    }
-    
-    // Start heartbeat
-    go sendHeartbeat(eurekaConfig)
+	eurekaConfig := getEurekaConfig()
+
+	// Register with retries
+	for i := 0; i < 3; i++ {
+		if err := registerWithEureka(eurekaConfig); err != nil {
+			log.Printf("⚠️  Eureka registration attempt %d failed: %v", i+1, err)
+			time.Sleep(5 * time.Second)
+		} else {
+			break
+		}
+	}
+
+	// Start heartbeat
+	// go sendHeartbeat(eurekaConfig)
 
 	cfg, err := utils.Load()
 	if err != nil {
@@ -272,25 +270,25 @@ func main() {
 	SearchService := application.NewSearchService(postgresRepo)
 	webhookService := application.NewWebhookService(postgresRepo)
 	analyticsService := application.NewAnalyticsService(postgresRepo)
-	multipartService := application.NewMultipartService(postgresRepo,minioAdapter)
+	multipartService := application.NewMultipartService(postgresRepo, minioAdapter)
 	// authService := application.NewAuthService(postgresRepo, jwtService)
 
 	// 3. Initialize Transport Layer (HTTP)
 	log.Println("Initializing HTTP handlers...")
 	handlers := &http.Handlers{
-		File:         http.NewFileHandler(uploadService, deleteService),
-		Bucket:       http.NewBucketHandler(bucketService),
-		Health:       http.NewHealthHandler(healthService),
-		Presign:      http.NewPresignHandler(presignedService),   // TODO: implement later
-		Batch:        http.NewBatchHandler(batchService),         // TODO: implement later
-		Prefix:       http.NewPrefixHandler(prefixService),       // TODO: implement later
-		Search:       http.NewSearchHandler(SearchService),       // TODO: implement later
-		Webhook:      http.NewWebhookHandler(webhookService),     // TODO: implement later
-		Analytics:    http.NewAnalyticsHandler(analyticsService), // TODO: implement later
-		Multipart:    http.NewMultipartHandler(multipartService), // TODO: implement later
+		File:      http.NewFileHandler(uploadService, deleteService),
+		Bucket:    http.NewBucketHandler(bucketService),
+		Health:    http.NewHealthHandler(healthService),
+		Presign:   http.NewPresignHandler(presignedService),   // TODO: implement later
+		Batch:     http.NewBatchHandler(batchService),         // TODO: implement later
+		Prefix:    http.NewPrefixHandler(prefixService),       // TODO: implement later
+		Search:    http.NewSearchHandler(SearchService),       // TODO: implement later
+		Webhook:   http.NewWebhookHandler(webhookService),     // TODO: implement later
+		Analytics: http.NewAnalyticsHandler(analyticsService), // TODO: implement later
+		Multipart: http.NewMultipartHandler(multipartService), // TODO: implement later
 		// Auth:         http.NewAuthHandler(authService),           // JWT authentication handler
-		Validator:    iamValidator,                               // IAM/API Key validator
-		JWTValidator: jwtService,                                 // JWT validator
+		Validator:    iamValidator, // IAM/API Key validator
+		JWTValidator: jwtService,   // JWT validator
 
 	}
 
@@ -312,8 +310,6 @@ func main() {
 	if err := router.Run(":" + serverPort); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
-
-
 
 }
 

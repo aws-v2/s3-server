@@ -1,6 +1,7 @@
 package http
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -31,40 +32,73 @@ func NewFileHandler(
 func (h *HandlerForFiles) UploadFile(c *gin.Context) {
 	bucketID := c.Param("bucketId")
 
-	file, header, err := c.Request.FormFile("file")
+	// Parse Multipart Form
+	form, err := c.MultipartForm()
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "file is required"})
-		return
-	}
-	defer file.Close()
-
-	data, err := io.ReadAll(file)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read file"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to parse multipart form: " + err.Error()})
 		return
 	}
 
-	output, err := h.uploadService.UploadFile(c.Request.Context(), application.UploadFileInput{
-		BucketID: bucketID,
-		Key:      header.Filename,
-		Data:     data,
-		MimeType: header.Header.Get("Content-Type"),
-		Metadata: map[string]string{
-			"original_name": header.Filename,
-		},
-	})
+	// 1. Process Files
+	files := form.File["files"]
+	var fileContents []application.FileContent
+	for _, fileHeader := range files {
+		file, err := fileHeader.Open()
+		if err != nil {
+			continue
+		}
+		defer file.Close()
+
+		data, err := io.ReadAll(file)
+		if err != nil {
+			continue
+		}
+
+		fileContents = append(fileContents, application.FileContent{
+			Name: fileHeader.Filename,
+			Size: fileHeader.Size,
+			Type: fileHeader.Header.Get("Content-Type"),
+			Data: data,
+		})
+	}
+
+	// 2. Parse JSON fields from form
+	var destSettings application.DestinationSettings
+	if ds := c.PostForm("destinationSettings"); ds != "" {
+		json.Unmarshal([]byte(ds), &destSettings)
+	}
+
+	var properties application.UploadProperties
+	if p := c.PostForm("properties"); p != "" {
+		json.Unmarshal([]byte(p), &properties)
+	}
+
+	var tags []application.Tag
+	if t := c.PostForm("tags"); t != "" {
+		json.Unmarshal([]byte(t), &tags)
+	}
+
+	var metadata []application.MetadataItem
+	if m := c.PostForm("metadata"); m != "" {
+		json.Unmarshal([]byte(m), &metadata)
+	}
+
+	input := application.UploadFileInput{
+		BucketID:            bucketID,
+		Files:               fileContents,
+		DestinationSettings: destSettings,
+		Properties:          properties,
+		Tags:                tags,
+		Metadata:            metadata,
+	}
+
+	output, err := h.uploadService.UploadFile(c.Request.Context(), input)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
- 
-	c.JSON(http.StatusCreated, gin.H{
-		"file_id":    output.FileID,
-		"key":        output.Key,
-		"size":       output.Size,
-		"created_at": output.CreatedAt,
- 
-	})
+
+	c.JSON(http.StatusCreated, output)
 }
 
 // ListFiles handles listing files in a bucket
@@ -78,13 +112,10 @@ func (h *HandlerForFiles) ListFiles(c *gin.Context) {
 		return
 	}
 
-
-
-
 	c.JSON(http.StatusOK, gin.H{
 		"bucketId": bucketID,
-		"count":     len(files),
-		"files":     files,
+		"count":    len(files),
+		"files":    files,
 	})
 }
 
@@ -97,10 +128,9 @@ func (h *HandlerForFiles) DeleteFile(c *gin.Context) {
 	err := h.deleteService.DeleteFile(c.Request.Context(), application.DeleteFileInput{
 		FileID:   fileID,
 		BucketID: bucketID,
-	
 	})
 	if err != nil {
- 
+
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -110,23 +140,20 @@ func (h *HandlerForFiles) DeleteFile(c *gin.Context) {
 	})
 }
 
-
-
 // GetFileInfo handles getting file metadata
 // GET /:bucketId/files/:fileId
 func (h *HandlerForFiles) GetFileInfo(c *gin.Context) {
 	bucketID := c.Param("bucketId")
 	fileID := c.Param("fileId")
-	
+
 	output, err := h.uploadService.GetFileInfo(c.Request.Context(), bucketID, fileID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
-	
+
 	c.JSON(http.StatusOK, output)
 }
-
 
 // DownloadFile handles file download
 // GET /:bucketId/files/:fileId/download
@@ -134,23 +161,18 @@ func (h *HandlerForFiles) DownloadFile(c *gin.Context) {
 	bucketID := c.Param("bucketId")
 	fileID := c.Param("fileId")
 
- 
-	
 	fileData, metadata, err := h.uploadService.DownloadFile(c.Request.Context(), bucketID, fileID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
-	
+
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", metadata.Key))
 	c.Header("Content-Type", metadata.MimeType)
 	c.Header("Content-Length", fmt.Sprintf("%d", metadata.Size))
-	
+
 	c.Data(http.StatusOK, metadata.MimeType, fileData)
 }
-
-
-
 
 // UpdateFileMetadata handles updating file metadata
 // PATCH /:bucketId/files/:fileId
@@ -158,20 +180,18 @@ func (h *HandlerForFiles) UpdateFileMetadata(c *gin.Context) {
 	bucketID := c.Param("bucketId")
 	fileID := c.Param("fileId")
 
- 
-	
 	var input dto.UpdateFileMetadataInput
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON payload"})
 		return
 	}
-	
+
 	output, err := h.uploadService.UpdateFileMetadata(c.Request.Context(), bucketID, fileID, input)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	
+
 	c.JSON(http.StatusOK, output)
 }
 
@@ -180,25 +200,21 @@ func (h *HandlerForFiles) UpdateFileMetadata(c *gin.Context) {
 func (h *HandlerForFiles) CopyFile(c *gin.Context) {
 	bucketID := c.Param("bucketId")
 	fileID := c.Param("fileId")
-	
+
 	var input dto.CopyFileInput
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON payload"})
 		return
 	}
-	
+
 	output, err := h.uploadService.CopyFile(c.Request.Context(), bucketID, fileID, input)
-	
-	
+
 	if err != nil {
-	
- 
-	
-	
+
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	
+
 	c.JSON(http.StatusCreated, output)
 }
 
@@ -207,20 +223,19 @@ func (h *HandlerForFiles) CopyFile(c *gin.Context) {
 func (h *HandlerForFiles) MoveFile(c *gin.Context) {
 	bucketID := c.Param("bucketId")
 	fileID := c.Param("fileId")
-	
+
 	var input dto.MoveFileInput
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON payload"})
 		return
 	}
-	
+
 	output, err := h.uploadService.MoveFile(c.Request.Context(), bucketID, fileID, input)
 	if err != nil {
- 
- 
+
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	
+
 	c.JSON(http.StatusOK, output)
 }
