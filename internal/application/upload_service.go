@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"s3/internal/domain"
@@ -23,6 +24,7 @@ func NewUploadService(storage domain.StoragePort, repository domain.RepositoryPo
 
 type UploadFileInput struct {
 	BucketID            string              `json:"bucketId"`
+	Prefix              string              `json:"prefix"`
 	Files               []FileContent       `json:"files"`
 	DestinationSettings DestinationSettings `json:"destinationSettings"`
 	Properties          UploadProperties    `json:"properties"`
@@ -85,17 +87,23 @@ func (s *UploadService) UploadFile(ctx context.Context, input UploadFileInput) (
 			fileData = []byte("placeholder data for " + f.Name)
 		}
 
+		// Prepend prefix to filename if provided
+		objectKey := f.Name
+		if input.Prefix != "" {
+			objectKey = fmt.Sprintf("%s/%s", strings.TrimSuffix(input.Prefix, "/"), f.Name)
+		}
+
 		// Save to MinIO
-		err = s.storage.SaveObject(ctx, bucket.Name, f.Name, fileData, metaMap)
+		err = s.storage.SaveObject(ctx, bucket.Name, objectKey, fileData, metaMap)
 		if err != nil {
-			return nil, fmt.Errorf("failed to save object %s: %w", f.Name, err)
+			return nil, fmt.Errorf("failed to save object %s: %w", objectKey, err)
 		}
 
 		// Save to DB
 		file := domain.File{
 			ID:        generateID(),
 			BucketID:  bucket.ID,
-			Key:       f.Name,
+			Key:       objectKey,
 			Size:      f.Size,
 			MimeType:  f.Type,
 			Metadata:  metaMap,
@@ -115,6 +123,40 @@ func (s *UploadService) UploadFile(ctx context.Context, input UploadFileInput) (
 		Result:    fmt.Sprintf("Successfully processed %d files", len(input.Files)),
 		CreatedAt: time.Now(),
 	}, nil
+}
+
+func (s *UploadService) CreateFolder(ctx context.Context, bucketID, folderName string) error {
+	bucket, err := s.repository.GetBucketByID(ctx, bucketID)
+	if err != nil {
+		return fmt.Errorf("bucket not found: %w", err)
+	}
+
+	// Folder name must end with /
+	folderKey := folderName
+	if !strings.HasSuffix(folderKey, "/") {
+		folderKey += "/"
+	}
+
+	// 1. Save 0-byte object to storage
+	if err := s.storage.SaveObject(ctx, bucket.Name, folderKey, []byte{}, nil); err != nil {
+		return fmt.Errorf("failed to create folder in storage: %w", err)
+	}
+
+	// 2. Save metadata to repository
+	file := domain.File{
+		ID:        generateID(),
+		BucketID:  bucket.ID,
+		Key:       folderKey,
+		Size:      0,
+		MimeType:  "application/x-directory",
+		CreatedAt: time.Now(),
+	}
+
+	if err := s.repository.SaveFile(ctx, file); err != nil {
+		return fmt.Errorf("failed to save folder metadata: %w", err)
+	}
+
+	return nil
 }
 
 // Simple ID generator (you can use UUID library later)

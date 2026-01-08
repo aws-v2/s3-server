@@ -27,25 +27,75 @@ func NewPrefixService(repo domain.RepositoryPort, storage domain.StoragePort) *P
 
 // ListByPrefix lists files by prefix
 func (s *PrefixService) ListByPrefix(ctx context.Context, input dto.ListByPrefixInput) (*dto.ListByPrefixOutput, error) {
-	files, err := s.repo.ListFilesByPrefix(ctx, input.BucketID, input.Prefix, input.Limit)
+	// 1. Get all files with the given prefix
+	files, err := s.repo.ListFilesByPrefix(ctx, input.BucketID, input.Prefix, 0) // Get all for filtering
 	if err != nil {
 		return nil, fmt.Errorf("failed to list files: %w", err)
 	}
 
-	fileInfos := make([]dto.FileInfo, len(files))
-	for i, file := range files {
-		fileInfos[i] = dto.FileInfo{
-			Key:         file.Key,
-			Size:        file.Size,
-			ContentType: file.ContentType,
-			Metadata:    file.Metadata,
-			CreatedAt:   file.CreatedAt,
+	if input.Delimiter == "" {
+		// Flat listing (original logic)
+		fileInfos := make([]dto.FileInfo, len(files))
+		for i, file := range files {
+			fileInfos[i] = dto.FileInfo{
+				Key:         file.Key,
+				Size:        file.Size,
+				ContentType: file.ContentType,
+				Metadata:    file.Metadata,
+				CreatedAt:   file.CreatedAt,
+			}
+		}
+
+		// Apply limit if specified
+		if input.Limit > 0 && len(fileInfos) > input.Limit {
+			fileInfos = fileInfos[:input.Limit]
+		}
+
+		return &dto.ListByPrefixOutput{
+			Files: fileInfos,
+			Total: len(fileInfos),
+		}, nil
+	}
+
+	// 2. Hierarchical listing logic
+	var fileInfos []dto.FileInfo
+	commonPrefixesMap := make(map[string]struct{})
+
+	prefixLen := len(input.Prefix)
+	for _, file := range files {
+		remainingKey := file.Key[prefixLen:]
+
+		// Find the first occurrence of the delimiter after the prefix
+		delimiterIdx := strings.Index(remainingKey, input.Delimiter)
+
+		if delimiterIdx == -1 {
+			// No more delimiters -> this is a direct file in the current prefix
+			fileInfos = append(fileInfos, dto.FileInfo{
+				Key:         file.Key,
+				Size:        file.Size,
+				ContentType: file.ContentType,
+				Metadata:    file.Metadata,
+				CreatedAt:   file.CreatedAt,
+			})
+		} else {
+			// Sub-folders found -> group into common prefixes
+			subFolder := input.Prefix + remainingKey[:delimiterIdx+1]
+			commonPrefixesMap[subFolder] = struct{}{}
 		}
 	}
 
+	commonPrefixes := make([]string, 0, len(commonPrefixesMap))
+	for cp := range commonPrefixesMap {
+		commonPrefixes = append(commonPrefixes, cp)
+	}
+
+	// Apply limit (combined files and folders)
+	total := len(fileInfos) + len(commonPrefixes)
+
 	return &dto.ListByPrefixOutput{
-		Files: fileInfos,
-		Total: len(files),
+		Files:          fileInfos,
+		CommonPrefixes: commonPrefixes,
+		Total:          total,
 	}, nil
 }
 

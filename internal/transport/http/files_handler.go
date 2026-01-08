@@ -83,8 +83,11 @@ func (h *HandlerForFiles) UploadFile(c *gin.Context) {
 		json.Unmarshal([]byte(m), &metadata)
 	}
 
+	prefix := c.PostForm("prefix")
+
 	input := application.UploadFileInput{
 		BucketID:            bucketID,
+		Prefix:              prefix,
 		Files:               fileContents,
 		DestinationSettings: destSettings,
 		Properties:          properties,
@@ -99,6 +102,28 @@ func (h *HandlerForFiles) UploadFile(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, output)
+}
+
+// CreateFolder handles explicit folder creation (0-byte object)
+// POST /buckets/:bucketId/folders
+func (h *HandlerForFiles) CreateFolder(c *gin.Context) {
+	bucketID := c.Param("bucketId")
+
+	var input struct {
+		Name string `json:"name" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON payload"})
+		return
+	}
+
+	if err := h.uploadService.CreateFolder(c.Request.Context(), bucketID, input.Name); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{"message": "folder created successfully"})
 }
 
 // ListFiles handles listing files in a bucket

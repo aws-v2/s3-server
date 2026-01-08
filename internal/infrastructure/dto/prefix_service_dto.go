@@ -3,14 +3,16 @@ package dto
 import "time"
 
 type ListByPrefixInput struct {
-	BucketID string `form:"bucket_id"`
-	Prefix   string `form:"prefix" binding:"required"`
-	Limit    int    `form:"limit"`
+	BucketID  string `form:"bucket_id"`
+	Prefix    string `form:"prefix"`
+	Delimiter string `form:"delimiter"`
+	Limit     int    `form:"limit"`
 }
 
 type ListByPrefixOutput struct {
-	Files []FileInfo `json:"files"`
-	Total int        `json:"total"`
+	Files          []FileInfo `json:"files"`
+	CommonPrefixes []string   `json:"common_prefixes,omitempty"`
+	Total          int        `json:"total"`
 }
 
 type FileInfo struct {

@@ -91,6 +91,9 @@ func registerObjectRoutes(v1 *gin.RouterGroup, handler *HandlerForFiles, validat
 			middleware.MaxFileSizeMiddleware(10<<20),
 			handler.UploadFile)
 
+		// Create direct folder
+		object.POST("/folders/:bucketId", handler.CreateFolder)
+
 		// List files in bucket
 		object.GET("/:bucketId", handler.ListFiles)
 
@@ -147,7 +150,7 @@ func registerBucketRoutes(v1 *gin.RouterGroup, handler *BucketHandler, validator
 		// Empty bucket
 		buckets.POST("/:bucketId/empty", handler.EmptyBucket)
 	}
-} 
+}
 
 // TODO: IMPLEMENT MILTIPART FOR PRESIGNED URLS
 func registerPresignRoutes(v1 *gin.RouterGroup, handler *PresignHandler) {
