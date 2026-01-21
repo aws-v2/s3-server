@@ -45,7 +45,7 @@ type EurekaConfig struct {
 // getEurekaConfig reads Eureka configuration from environment variables
 func getEurekaConfig() *EurekaConfig {
 	return &EurekaConfig{
-		ServerURL:         getEnv("EUREKA_SERVER_URL", "http://localhost:8761/eureka"),
+		ServerURL:         getEnv("EUREKA_SERVER_URL", "http://localhost:8762/eureka"),
 		AppName:           getEnv("EUREKA_APP_NAME", "S3-SERVICE"),
 		HostName:          getEnv("EUREKA_HOSTNAME", "localhost"), // ✅ Default to localhost for local dev
 		IPAddr:            getEnv("EUREKA_IP_ADDR", "127.0.0.1"),
