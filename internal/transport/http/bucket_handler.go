@@ -101,7 +101,7 @@ func (h *BucketHandler) GetBucketInfo(c *gin.Context) {
 }
 
 // UpdateBucket handles updating bucket settings
-// PATCH /:bucketId
+// PATCH /:bucketIdj
 func (h *BucketHandler) UpdateBucket(c *gin.Context) {
 	bucketID := c.Param("bucketId")
 
