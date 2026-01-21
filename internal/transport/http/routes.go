@@ -27,7 +27,7 @@ type Handlers struct {
 // RegisterRoutes registers all application routes
 func RegisterRoutes(router *gin.Engine, handlers *Handlers) {
 	// API group (Gateway strips /api/v1)
-	v1 := router.Group("/")
+	v1 := router.Group("/api/v1/s3")
 
 	// Chain authentication middlewares: try API key first, then JWT
 	// v1.Use(middleware.APIKeyAuthMiddleware(handlers.Validator))------------>>IAM
@@ -51,6 +51,8 @@ func RegisterRoutes(router *gin.Engine, handlers *Handlers) {
 
 }
 
+ 
+
 // registerAuthRoutes registers authentication routes
 func registerAuthRoutes(v1 *gin.RouterGroup, handler *AuthHandler) {
 	auth := v1.Group("/auth")
@@ -70,6 +72,9 @@ func registerAuthRoutes(v1 *gin.RouterGroup, handler *AuthHandler) {
 
 // registerHealthRoutes registers all health check routes
 func registerHealthRoutes(v1 *gin.RouterGroup, handler *HandlerForHealth) {
+
+	
+	
 	health := v1.Group("/health")
 	{
 		health.GET("/ping", handler.Ping)

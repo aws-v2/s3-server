@@ -181,7 +181,7 @@ func main() {
 	}
 
 	// Start heartbeat
-	// go sendHeartbeat(eurekaConfig)
+	go sendHeartbeat(eurekaConfig)
 
 	cfg, err := utils.Load()
 	if err != nil {
