@@ -7,6 +7,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/nats-io/nats.go"
 )
 
@@ -26,13 +27,28 @@ type Event struct {
 }
 
 // NewNATSAdapter creates a new NATS event publisher
-func NewNATSAdapter(url string) (*NATSAdapter, error) {
-	// Connect to NATS
-	conn, err := nats.Connect(url,
+func NewNATSAdapter(url, user, password string) (*NATSAdapter, error) {
+	// Connect to NATS with resilient options
+	options := []nats.Option{
 		nats.RetryOnFailedConnect(true),
-		nats.MaxReconnects(10),
-		nats.ReconnectWait(2*time.Second),
-	)
+		nats.MaxReconnects(-1), // Infinite reconnects
+		nats.ReconnectWait(2 * time.Second),
+		nats.DisconnectHandler(func(c *nats.Conn) {
+			log.Printf("[NATS] Warn: disconnected from NATS server")
+		}),
+		nats.ReconnectHandler(func(c *nats.Conn) {
+			log.Printf("[NATS] Success: reconnected to NATS server at %s", c.ConnectedUrl())
+		}),
+		nats.ClosedHandler(func(c *nats.Conn) {
+			log.Printf("[NATS] Critical: NATS connection closed permanently: %v", c.LastError())
+		}),
+	}
+
+	if user != "" && password != "" {
+		options = append(options, nats.UserInfo(user, password))
+	}
+
+	conn, err := nats.Connect(url, options...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to NATS: %w", err)
 	}
@@ -40,8 +56,8 @@ func NewNATSAdapter(url string) (*NATSAdapter, error) {
 	// Create JetStream context
 	js, err := conn.JetStream()
 	if err != nil {
-		conn.Close()
-		return nil, fmt.Errorf("failed to create JetStream context: %w", err)
+		log.Printf("[NATS] Warn: failed to create JetStream context (will retry lazy): %v", err)
+		// We DON'T call conn.Close() here anymore, so the base connection survives
 	}
 
 	adapter := &NATSAdapter{
@@ -213,4 +229,58 @@ func (n *NATSAdapter) Drain() error {
 // GetConnection returns the underlying NATS connection
 func (n *NATSAdapter) GetConnection() *nats.Conn {
 	return n.conn
+}
+
+type instanceTokenRequest struct {
+	InstanceID string `json:"instance_id"`
+	UserID     string `json:"user_id"`
+}
+
+type instanceTokenResponse struct {
+	Token string `json:"token"`
+	Error string `json:"error"`
+}
+
+// RequestInstanceToken asks the IAM service for a scoped JWT token for the metrics agent.
+func (n *NATSAdapter) RequestInstanceToken(ctx context.Context, userID, instanceID string) (string, error) {
+	correlationID := uuid.New().String()
+	subject := "dev.iam.v1.token.generate"
+
+	req := instanceTokenRequest{
+		InstanceID: instanceID,
+		UserID:     userID,
+	}
+
+	data, err := json.Marshal(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal instance token request: %w", err)
+	}
+
+	log.Printf("[S3-NATS] [REQUEST] subject=%s correlation_id=%s user_id=%s instance_id=%s status=%s",
+		subject, correlationID, userID, instanceID, n.conn.Status())
+
+	msg, err := n.conn.RequestWithContext(ctx, subject, data)
+	if err != nil {
+		log.Printf("[S3-NATS] [ERROR] RequestInstanceToken failed: correlation_id=%s error=%v last_err=%v status=%s",
+			correlationID, err, n.conn.LastError(), n.conn.Status())
+		return "", fmt.Errorf("NATS request failed: %w", err)
+	}
+
+	var resp instanceTokenResponse
+	if err := json.Unmarshal(msg.Data, &resp); err != nil {
+		return "", fmt.Errorf("failed to unmarshal instance token response: %w", err)
+	}
+
+	if resp.Error != "" {
+		log.Printf("[S3-NATS] [FAILURE] RequestInstanceToken: correlation_id=%s error=%s", correlationID, resp.Error)
+		return "", fmt.Errorf("IAM service error: %s", resp.Error)
+	}
+
+	if resp.Token == "" {
+		log.Printf("[S3-NATS] [FAILURE] RequestInstanceToken: correlation_id=%s error=empty_token", correlationID)
+		return "", fmt.Errorf("IAM service returned an empty token")
+	}
+
+	log.Printf("[S3-NATS] [SUCCESS] Instance token received: correlation_id=%s instance_id=%s", correlationID, instanceID)
+	return resp.Token, nil
 }

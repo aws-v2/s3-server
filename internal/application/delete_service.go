@@ -4,17 +4,21 @@ import (
 	"context"
 	"fmt"
 	"s3/internal/domain"
+	"s3/internal/infrastructure/dto"
+	"s3/internal/infrastructure/metrics"
 )
 
 type DeleteService struct {
 	storage    domain.StoragePort
 	repository domain.RepositoryPort
+	metrics    *metrics.MetricsClient
 }
 
-func NewDeleteService(storage domain.StoragePort, repository domain.RepositoryPort) *DeleteService {
+func NewDeleteService(storage domain.StoragePort, repository domain.RepositoryPort, metrics *metrics.MetricsClient) *DeleteService {
 	return &DeleteService{
 		storage:    storage,
 		repository: repository,
+		metrics:    metrics,
 	}
 }
 
@@ -54,5 +58,24 @@ func (s *DeleteService) DeleteFile(ctx context.Context, input DeleteFileInput) e
 		return fmt.Errorf("failed to delete file metadata: %w", err)
 	}
 
+	// 3. Emit metrics for delete (Tier 1/Free)
+	if bucket, err := s.repository.GetBucketByID(ctx, input.BucketID, filterID); err == nil {
+		go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
+			DeleteRequests: 1,
+		})
+	}
+
 	return nil
+}
+
+func (s *DeleteService) emitMetrics(ctx context.Context, bucketID, ownerID, region string, partial dto.S3IngestRequest) {
+	if s.metrics == nil {
+		return
+	}
+
+	partial.BucketID = bucketID
+	partial.OwnerID = ownerID
+	partial.Region = region
+
+	_ = s.metrics.SendS3Metrics(ctx, partial)
 }

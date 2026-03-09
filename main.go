@@ -12,6 +12,7 @@ import (
 	"s3/internal/infrastructure/repository"
 
 	"s3/internal/infrastructure/event"
+	"s3/internal/infrastructure/metrics"
 	"s3/internal/infrastructure/storage"
 	"s3/internal/middleware"
 
@@ -223,9 +224,8 @@ func main() {
 	postgresRepo := repository.NewPostgresRepository(db)
 
 	// Initialize NATS connection for IAM integration
-	natsURL := getEnv("NATS_URL", "nats://localhost:4222")
-	log.Printf("Connecting to NATS at %s...", natsURL)
-	natsAdapter, err := event.NewNATSAdapter(natsURL)
+	log.Printf("Connecting to NATS at %s...", cfg.NATS.URL)
+	natsAdapter, err := event.NewNATSAdapter(cfg.NATS.URL, cfg.NATS.User, cfg.NATS.Password)
 	if err != nil {
 		log.Fatalf("Failed to connect to NATS: %v", err)
 	}
@@ -259,19 +259,22 @@ func main() {
 
 	sys := &system.System{} // note pointer, so methods can be called
 
+	// Initialize Metrics Client
+	metricsClient := metrics.NewMetricsClient(natsAdapter, eurekaConfig.InstanceID)
+
 	// 2. Initialize Application Layer (Services)
 	log.Println("Initializing services...")
-	uploadService := application.NewUploadService(minioAdapter, postgresRepo)
-	bucketService := application.NewBucketService(postgresRepo, minioAdapter)
-	deleteService := application.NewDeleteService(minioAdapter, postgresRepo)
+	uploadService := application.NewUploadService(minioAdapter, postgresRepo, metricsClient)
+	bucketService := application.NewBucketService(postgresRepo, minioAdapter, metricsClient)
+	deleteService := application.NewDeleteService(minioAdapter, postgresRepo, metricsClient)
 	healthService := application.NewHealthService(postgresRepo, minioAdapter, sys)
-	presignedService := application.NewPresignService(postgresRepo, minioAdapter, "sys")
-	batchService := application.NewBatchService(postgresRepo, minioAdapter)
-	prefixService := application.NewPrefixService(postgresRepo, minioAdapter)
+	presignedService := application.NewPresignService(postgresRepo, minioAdapter, metricsClient, "sys")
+	batchService := application.NewBatchService(postgresRepo, minioAdapter, metricsClient)
+	prefixService := application.NewPrefixService(postgresRepo, minioAdapter, metricsClient)
 	SearchService := application.NewSearchService(postgresRepo)
 	webhookService := application.NewWebhookService(postgresRepo)
 	analyticsService := application.NewAnalyticsService(postgresRepo)
-	multipartService := application.NewMultipartService(postgresRepo, minioAdapter)
+	multipartService := application.NewMultipartService(postgresRepo, minioAdapter, metricsClient)
 
 	// 3. Initialize Transport Layer (HTTP)
 	log.Println("Initializing HTTP handlers...")

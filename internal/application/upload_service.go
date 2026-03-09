@@ -8,6 +8,7 @@ import (
 
 	"s3/internal/domain"
 	"s3/internal/infrastructure/dto"
+	"s3/internal/infrastructure/metrics"
 
 	"github.com/google/uuid"
 )
@@ -15,12 +16,14 @@ import (
 type UploadService struct {
 	storage    domain.StoragePort
 	repository domain.RepositoryPort
+	metrics    *metrics.MetricsClient
 }
 
-func NewUploadService(storage domain.StoragePort, repository domain.RepositoryPort) *UploadService {
+func NewUploadService(storage domain.StoragePort, repository domain.RepositoryPort, metrics *metrics.MetricsClient) *UploadService {
 	return &UploadService{
 		storage:    storage,
 		repository: repository,
+		metrics:    metrics,
 	}
 }
 
@@ -97,6 +100,7 @@ func (s *UploadService) UploadFile(ctx context.Context, input UploadFileInput) (
 	}
 
 	var fileIDs []string
+	var totalBytes int64
 
 	// Convert metadata slice to map
 	metaMap := make(map[string]string)
@@ -105,6 +109,8 @@ func (s *UploadService) UploadFile(ctx context.Context, input UploadFileInput) (
 	}
 
 	for _, f := range input.Files {
+		totalBytes += f.Size
+		// ...
 		// Use actual binary data if provided
 		fileData := f.Data
 		if len(fileData) == 0 {
@@ -142,11 +148,29 @@ func (s *UploadService) UploadFile(ctx context.Context, input UploadFileInput) (
 		fileIDs = append(fileIDs, file.ID)
 	}
 
+	// Emit metrics for upload (Tier 1 + Bytes)
+	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
+		PutRequests:   int64(len(input.Files)),
+		BytesUploaded: totalBytes,
+	})
+
 	return &UploadFileOutput{
 		FileIDs:   fileIDs,
 		Result:    fmt.Sprintf("Successfully processed %d files", len(input.Files)),
 		CreatedAt: time.Now(),
 	}, nil
+}
+
+func (s *UploadService) emitMetrics(ctx context.Context, bucketID, ownerID, region string, partial dto.S3IngestRequest) {
+	if s.metrics == nil {
+		return
+	}
+
+	partial.BucketID = bucketID
+	partial.OwnerID = ownerID
+	partial.Region = region
+
+	_ = s.metrics.SendS3Metrics(ctx, partial)
 }
 
 func (s *UploadService) CreateFolder(ctx context.Context, bucketID, folderName string) error {
@@ -186,6 +210,11 @@ func (s *UploadService) CreateFolder(ctx context.Context, bucketID, folderName s
 		return fmt.Errorf("failed to save folder metadata: %w", err)
 	}
 
+	// Emit metrics for folder creation (Tier 1)
+	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
+		PutRequests: 1,
+	})
+
 	return nil
 }
 
@@ -207,6 +236,11 @@ func (s *UploadService) GetFileInfo(ctx context.Context, bucketID, fileID string
 	if err != nil {
 		return nil, err
 	}
+
+	// Emit metrics for Head (Tier 2)
+	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
+		HeadRequests: 1,
+	})
 
 	// Get file from DB (try ID first, then Key)
 	file, err := s.repository.GetFileByID(ctx, fileID)
@@ -247,6 +281,11 @@ func (s *UploadService) ListFiles(ctx context.Context, bucketName string) ([]dto
 	if err != nil {
 		return nil, err
 	}
+
+	// Emit metrics for List (Tier 2)
+	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
+		ListRequests: 1,
+	})
 
 	// Get files from DB using bucket ID
 	files, err := s.repository.ListFiles(ctx, bucket.ID)
@@ -309,6 +348,12 @@ func (s *UploadService) DownloadFile(ctx context.Context, bucketId, fileID strin
 		CreatedAt: file.CreatedAt,
 	}
 
+	// Emit metrics for Download (Tier 2 + Bytes)
+	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
+		GetRequests:     1,
+		BytesDownloaded: int64(len(data)),
+	})
+
 	return data, metadata, nil
 }
 
@@ -338,6 +383,11 @@ func (s *UploadService) UpdateFileMetadata(ctx context.Context, bucketID, fileID
 	if err := s.repository.UpdateFile(ctx, file); err != nil {
 		return nil, fmt.Errorf("failed to update metadata: %w", err)
 	}
+
+	// Emit metrics for Metadata update (Tier 1)
+	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
+		PutRequests: 1,
+	})
 
 	return &dto.FileInfoOutput{
 		FileID:    file.ID,
@@ -401,6 +451,14 @@ func (s *UploadService) CopyFile(ctx context.Context, sourceBucketID, fileID str
 		return nil, fmt.Errorf("failed to save file metadata: %w", err)
 	}
 
+	// Emit metrics for Copy (Source Get + Dest Put)
+	go s.emitMetrics(context.Background(), sourceBucket.ID, sourceBucket.OwnerID, sourceBucket.Region, dto.S3IngestRequest{
+		GetRequests: 1,
+	})
+	go s.emitMetrics(context.Background(), destBucket.ID, destBucket.OwnerID, destBucket.Region, dto.S3IngestRequest{
+		PutRequests: 1,
+	})
+
 	return &dto.FileInfoOutput{
 		FileID:    newFile.ID,
 		BucketID:  input.DestinationBucket,
@@ -460,6 +518,14 @@ func (s *UploadService) MoveFile(ctx context.Context, sourceBucketName, fileID s
 	if err := s.repository.UpdateFile(ctx, file); err != nil {
 		return nil, fmt.Errorf("failed to update file metadata: %w", err)
 	}
+
+	// Emit metrics for Move (Source Delete + Dest Put)
+	go s.emitMetrics(context.Background(), sourceBucket.ID, sourceBucket.OwnerID, sourceBucket.Region, dto.S3IngestRequest{
+		DeleteRequests: 1,
+	})
+	go s.emitMetrics(context.Background(), destBucket.ID, destBucket.OwnerID, destBucket.Region, dto.S3IngestRequest{
+		PutRequests: 1,
+	})
 
 	return &dto.FileInfoOutput{
 		FileID:    file.ID,

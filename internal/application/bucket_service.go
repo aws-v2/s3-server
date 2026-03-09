@@ -8,6 +8,7 @@ import (
 	"os"
 	"s3/internal/domain"
 	"s3/internal/infrastructure/dto"
+	"s3/internal/infrastructure/metrics"
 	"strings"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 type BucketService struct {
 	repo    domain.RepositoryPort
 	storage domain.StoragePort
+	metrics *metrics.MetricsClient
 }
 
 type BucketAlreadyExists struct {
@@ -29,10 +31,11 @@ func (e *BucketAlreadyExists) Error() string {
 }
 
 // NewBucketService creates a new instance of BucketService.
-func NewBucketService(repo domain.RepositoryPort, storage domain.StoragePort) *BucketService {
+func NewBucketService(repo domain.RepositoryPort, storage domain.StoragePort, metrics *metrics.MetricsClient) *BucketService {
 	return &BucketService{
 		repo:    repo,
 		storage: storage,
+		metrics: metrics,
 	}
 }
 
@@ -106,12 +109,31 @@ func (s *BucketService) CreateBucket(ctx context.Context, input dto.CreateBucket
 		return nil, fmt.Errorf("failed to save bucket metadata: %w", err)
 	}
 
+	// Emit metrics for bucket creation (Tier 1)
+	go s.emitMetrics(context.Background(), bucketObject.ID, bucketObject.OwnerID, bucketObject.Region, dto.S3IngestRequest{
+		PutRequests: 1,
+	})
+
 	// Return success
 	return &dto.CreateBucketOutput{
 		BucketID:  bucketObject.ID,
 		Name:      input.Name,
 		CreatedAt: bucket.CreatedAt,
 	}, nil
+}
+
+func (s *BucketService) emitMetrics(ctx context.Context, bucketID, ownerID, region string, partial dto.S3IngestRequest) {
+	if s.metrics == nil {
+		return
+	}
+
+	// Enrich with basic info
+	partial.BucketID = bucketID
+	partial.OwnerID = ownerID
+	partial.Region = region
+
+	// Attempt to send
+	_ = s.metrics.SendS3Metrics(ctx, partial)
 }
 
 func (s *BucketService) resolveBucket(ctx context.Context, idOrName string, filterID string) (domain.Bucket, error) {
@@ -142,6 +164,11 @@ func (s *BucketService) GetBucket(ctx context.Context, bucketID string) (*dto.Ge
 		return nil, err
 	}
 
+	// Emit metrics for bucket detail (Tier 2 - Head/Get)
+	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
+		HeadRequests: 1,
+	})
+
 	return &dto.GetBucketOutput{
 		BucketID:   bucket.ID,
 		Name:       bucket.Name,
@@ -159,7 +186,12 @@ func (s *BucketService) ListBuckets(ctx context.Context) ([]domain.Bucket, error
 		filterID = ""
 	}
 	fmt.Printf("-------------------*-%s-*------------", actor)
-	return s.repo.ListBuckets(ctx, filterID)
+	buckets, err := s.repo.ListBuckets(ctx, filterID)
+	if err == nil {
+		// Emit metrics for List (Tier 2) - Note: This is an account-level list, but we can log it
+		// For simplicity, we'll skip per-bucket metrics here unless a specific bucket was requested
+	}
+	return buckets, err
 }
 
 func (s *BucketService) UpdateBucket(ctx context.Context, bucketID string, input dto.UpdateBucketInput) (*dto.GetBucketOutput, error) {
@@ -186,6 +218,11 @@ func (s *BucketService) UpdateBucket(ctx context.Context, bucketID string, input
 	if err != nil {
 		return nil, fmt.Errorf("failed to update bucket: %w", err)
 	}
+
+	// Emit metrics for update (Tier 1)
+	go s.emitMetrics(context.Background(), updated.ID, updated.OwnerID, updated.Region, dto.S3IngestRequest{
+		PutRequests: 1,
+	})
 
 	return &dto.GetBucketOutput{
 		BucketID:  updated.ID,
@@ -222,6 +259,12 @@ func (s *BucketService) DeleteBucket(ctx context.Context, bucketID string) error
 
 		return fmt.Errorf("failed to delete bucket: %w", err)
 	}
+
+	// Emit metrics for delete (Tier 1/Free)
+	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
+		DeleteRequests: 1,
+	})
+
 	return nil
 }
 
@@ -246,6 +289,11 @@ func (s *BucketService) EmptyBucket(ctx context.Context, bucketID string) error 
 	if err := s.repo.DeleteFilesByBucket(ctx, bucketID); err != nil {
 		return fmt.Errorf("failed to delete file metadata: %w", err)
 	}
+
+	// Emit metrics for empty/delete (Tier 1/Free)
+	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
+		DeleteRequests: 1,
+	})
 
 	return nil
 }
@@ -387,6 +435,11 @@ func (s *BucketService) SetBucketVersioning(ctx context.Context, bucketID string
 		return fmt.Errorf("failed to persist versioning status: %w", err)
 	}
 
+	// Emit metrics for versioning (Tier 1)
+	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
+		PutRequests: 1,
+	})
+
 	return nil
 }
 
@@ -470,6 +523,15 @@ func (s *BucketService) SetBucketLifecycle(ctx context.Context, bucketID string,
 			return fmt.Errorf("failed to save lifecycle rule: %w", err)
 		}
 	}
+
+	// Emit metrics for lifecycle (Tier 1)
+	// We need bucket info for owner/region
+	if bucket, err := s.resolveBucket(ctx, bucketID, filterID); err == nil {
+		go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
+			PutRequests: 1,
+		})
+	}
+
 	return nil
 }
 

@@ -140,3 +140,7 @@ type EventPublisher interface {
 	Publish(ctx context.Context, topic string, payload interface{}) error
 	Consume(ctx context.Context, topic string) error
 }
+
+type TokenProvider interface {
+	RequestInstanceToken(ctx context.Context, userID, instanceID string) (string, error)
+}

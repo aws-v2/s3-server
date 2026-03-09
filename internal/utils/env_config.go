@@ -10,12 +10,15 @@ import (
 type Config struct {
 	// Database
 	DB DBConfig
-	
+
 	// S3/MinIO
 	S3 S3Config
-	
+
 	// Server
 	Server ServerConfig
+
+	// NATS
+	NATS NATSConfig
 }
 
 type DBConfig struct {
@@ -42,6 +45,12 @@ type ServerConfig struct {
 	Port string
 }
 
+type NATSConfig struct {
+	URL      string
+	User     string
+	Password string
+}
+
 func Load() (*Config, error) {
 	cfg := &Config{
 		DB: DBConfig{
@@ -65,12 +74,17 @@ func Load() (*Config, error) {
 		Server: ServerConfig{
 			Port: getEnv("SERVER_PORT", "8082"),
 		},
+		NATS: NATSConfig{
+			URL:      getEnv("NATS_URL", "nats://localhost:4222"),
+			User:     getEnv("NATS_USER", "auth-server"),
+			Password: getEnv("NATS_PASSWORD", "auth-secret"),
+		},
 	}
-	
+
 	if cfg.DB.Password == "" {
 		return nil, fmt.Errorf("POSTGRES_PASSWORD is required")
 	}
-	
+
 	return cfg, nil
 }
 
