@@ -11,7 +11,6 @@ import (
 	"s3/internal/infrastructure/database"
 	"s3/internal/infrastructure/repository"
 
-	"s3/internal/infrastructure/auth"
 	"s3/internal/infrastructure/event"
 	"s3/internal/infrastructure/storage"
 	"s3/internal/middleware"
@@ -45,7 +44,7 @@ type EurekaConfig struct {
 // getEurekaConfig reads Eureka configuration from environment variables
 func getEurekaConfig() *EurekaConfig {
 	return &EurekaConfig{
-		ServerURL:         getEnv("EUREKA_SERVER_URL", "http://localhost:8762/eureka"),
+		ServerURL:         getEnv("EUREKA_SERVER_URL", "http://localhost:8761/eureka"),
 		AppName:           getEnv("EUREKA_APP_NAME", "S3-SERVICE"),
 		HostName:          getEnv("EUREKA_HOSTNAME", "localhost"), // ✅ Default to localhost for local dev
 		IPAddr:            getEnv("EUREKA_IP_ADDR", "127.0.0.1"),
@@ -235,12 +234,6 @@ func main() {
 	// Create IAM validator
 	iamValidator := middleware.NewIAMValidator(natsAdapter.GetConnection())
 
-	// Create JWT service
-	jwtSecret := getEnv("JWT_SECRET", "your-secret-key-change-this-in-production")
-	jwtIssuer := getEnv("JWT_ISSUER", "s3-clone")
-	jwtExpiryMinutes := getEnvInt("JWT_EXPIRY_MINUTES", 1440) // 24 hours default
-	jwtService := auth.NewJWTService(jwtSecret, jwtIssuer, jwtExpiryMinutes)
-
 	// // Run migrations
 	// log.Println("Running database migrations...")
 	// if err := database.RunMigrations(db, dbConfig.Database); err != nil {
@@ -271,7 +264,6 @@ func main() {
 	webhookService := application.NewWebhookService(postgresRepo)
 	analyticsService := application.NewAnalyticsService(postgresRepo)
 	multipartService := application.NewMultipartService(postgresRepo, minioAdapter)
-	// authService := application.NewAuthService(postgresRepo, jwtService)
 
 	// 3. Initialize Transport Layer (HTTP)
 	log.Println("Initializing HTTP handlers...")
@@ -288,8 +280,7 @@ func main() {
 		Multipart: http.NewMultipartHandler(multipartService), // TODO: implement later
 		// Auth:         http.NewAuthHandler(authService),           // JWT authentication handler
 		Validator:    iamValidator, // IAM/API Key validator
-		JWTValidator: jwtService,   // JWT validator
-
+		JWTValidator: nil,          // JWT validator removed
 	}
 
 	// 4. Setup Router
@@ -298,10 +289,6 @@ func main() {
 
 	// 5. Start Server
 	log.Printf("🚀 Server starting on port %s...", serverPort)
-	log.Printf("📝 API endpoints:")
-	log.Printf("  - POST   /api/v1/auth/register (public)")
-	log.Printf("  - POST   /api/v1/auth/login (public)")
-	log.Printf("  - GET    /api/v1/auth/me (protected)")
 	log.Printf("  - POST   /api/v1/buckets/:bucketId/files")
 	log.Printf("  - GET    /api/v1/buckets/:bucketId/files")
 	log.Printf("  - DELETE /api/v1/buckets/:bucketId/files/:fileId?key=<filename>")

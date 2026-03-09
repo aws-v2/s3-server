@@ -64,10 +64,13 @@ func (s *BucketService) CreateBucket(ctx context.Context, input dto.CreateBucket
 		})
 	}
 
+	arn := fmt.Sprintf("arn:serw:s3:%s:%s:bucket/%s", input.Region, input.OwnerId, input.Name)
+
 	bucket := &domain.Bucket{
 		ID:              bucketId,
 		Name:            input.Name,
 		OwnerID:         input.OwnerId,
+		ARN:             arn,
 		Region:          input.Region,
 		BucketType:      input.BucketType,
 		ObjectOwnership: input.ObjectOwnership,
@@ -109,11 +112,11 @@ func (s *BucketService) GetBucket(ctx context.Context, bucketID string) (*dto.Ge
 	}
 
 	return &dto.GetBucketOutput{
-		BucketID:  bucket.ID,
-		Name:      bucket.Name,
-		CreatedAt: bucket.CreatedAt,
+		BucketID:   bucket.ID,
+		Name:       bucket.Name,
+		CreatedAt:  bucket.CreatedAt,
 		BucketType: bucket.BucketType,
-		Region: bucket.Region,
+		Region:     bucket.Region,
 	}, nil
 }
 
