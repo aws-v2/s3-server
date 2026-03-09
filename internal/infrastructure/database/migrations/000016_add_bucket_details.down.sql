@@ -1,0 +1,9 @@
+ALTER TABLE buckets DROP COLUMN IF EXISTS owner_id;
+ALTER TABLE buckets DROP COLUMN IF EXISTS region;
+ALTER TABLE buckets DROP COLUMN IF EXISTS bucket_type;
+ALTER TABLE buckets DROP COLUMN IF EXISTS object_ownership;
+ALTER TABLE buckets DROP COLUMN IF EXISTS block_public_access;
+ALTER TABLE buckets DROP COLUMN IF EXISTS tags;
+ALTER TABLE buckets DROP COLUMN IF EXISTS encryption;
+ALTER TABLE buckets DROP COLUMN IF EXISTS object_lock;
+ALTER TABLE buckets DROP COLUMN IF EXISTS versioning_status;

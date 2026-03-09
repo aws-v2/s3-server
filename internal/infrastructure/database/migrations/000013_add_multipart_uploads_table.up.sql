@@ -1,4 +1,4 @@
-CREATE TABLE multipart_uploads (
+CREATE TABLE IF NOT EXISTS multipart_uploads (
     id VARCHAR(255) PRIMARY KEY,
     upload_id VARCHAR(255) UNIQUE NOT NULL,
     bucket_id VARCHAR(255) NOT NULL,
@@ -9,5 +9,5 @@ CREATE TABLE multipart_uploads (
     updated_at TIMESTAMP NOT NULL
 );
 
-CREATE INDEX idx_multipart_bucket_status ON multipart_uploads(bucket_id, status);
-CREATE INDEX idx_multipart_upload_id ON multipart_uploads(upload_id);
+CREATE INDEX IF NOT EXISTS idx_multipart_bucket_status ON multipart_uploads(bucket_id, status);
+CREATE INDEX IF NOT EXISTS idx_multipart_upload_id ON multipart_uploads(upload_id);

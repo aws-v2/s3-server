@@ -234,12 +234,20 @@ func main() {
 	// Create IAM validator
 	iamValidator := middleware.NewIAMValidator(natsAdapter.GetConnection())
 
-	// // Run migrations
-	// log.Println("Running database migrations...")
-	// if err := database.RunMigrations(db, dbConfig.Database); err != nil {
-	// 	log.Fatalf("Failed to run migrations: %v", err)
-	// }
-	// log.Println("Migrations completed successfully")
+	// Run migrations
+	log.Println("Running database migrations...")
+	version, dirty, err := database.GetMigrationVersion(db, dbConfig.Database)
+	if err == nil && dirty {
+		log.Printf("⚠️  Database is dirty at version %d. Forcing version to clear dirty flag...", version)
+		if err := database.ForceVersion(db, dbConfig.Database, int(version)); err != nil {
+			log.Fatalf("Failed to force migration version: %v", err)
+		}
+	}
+
+	if err := database.RunMigrations(db, dbConfig.Database); err != nil {
+		log.Fatalf("Failed to run migrations: %v", err)
+	}
+	log.Println("Migrations completed successfully")
 
 	// // Check current migration version (optional)
 	// version, dirty, err := database.GetMigrationVersion(db, dbConfig.Database)

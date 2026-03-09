@@ -1,4 +1,4 @@
-CREATE TABLE presigned_urls (
+CREATE TABLE IF NOT EXISTS presigned_urls (
     id VARCHAR(36) PRIMARY KEY,
     bucket_id VARCHAR(36) NOT NULL,
     -- file_id removed as a foreign key to avoid FK violations; still optional link field
@@ -16,8 +16,8 @@ CREATE TABLE presigned_urls (
 );
 
 -- ✅ Helpful indexes for common queries
-CREATE INDEX idx_presigned_urls_bucket_id ON presigned_urls(bucket_id);
-CREATE INDEX idx_presigned_urls_expires_at ON presigned_urls(expires_at);
-CREATE INDEX idx_presigned_urls_revoked ON presigned_urls(revoked);
-CREATE INDEX idx_presigned_urls_key ON presigned_urls(key);
-CREATE INDEX idx_presigned_urls_type ON presigned_urls(type);
+CREATE INDEX IF NOT EXISTS idx_presigned_urls_bucket_id ON presigned_urls(bucket_id);
+CREATE INDEX IF NOT EXISTS idx_presigned_urls_expires_at ON presigned_urls(expires_at);
+CREATE INDEX IF NOT EXISTS idx_presigned_urls_revoked ON presigned_urls(revoked);
+CREATE INDEX IF NOT EXISTS idx_presigned_urls_key ON presigned_urls(key);
+CREATE INDEX IF NOT EXISTS idx_presigned_urls_type ON presigned_urls(type);
