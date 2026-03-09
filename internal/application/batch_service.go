@@ -40,7 +40,13 @@ func (s *BatchService) BatchUpload(ctx context.Context, input dto.BatchUploadInp
 		return nil, fmt.Errorf("failed to create batch operation: %w", err)
 	}
 
-	go s.processBatchUpload(context.Background(), operationID, input)
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	go s.processBatchUpload(context.Background(), operationID, input, filterID)
 
 	return &dto.BatchOperationOutput{
 		OperationID: operationID,
@@ -48,13 +54,13 @@ func (s *BatchService) BatchUpload(ctx context.Context, input dto.BatchUploadInp
 	}, nil
 }
 
-func (s *BatchService) processBatchUpload(ctx context.Context, operationID string, input dto.BatchUploadInput) {
+func (s *BatchService) processBatchUpload(ctx context.Context, operationID string, input dto.BatchUploadInput, filterID string) {
 	operation, _ := s.repo.GetBatchOperationByID(ctx, operationID)
 	operation.Status = "processing"
 	operation.UpdatedAt = time.Now()
 	s.repo.UpdateBatchOperation(ctx, operation)
 
-	bucket, err := s.repo.GetBucketByID(ctx, input.BucketID)
+	bucket, err := s.repo.GetBucketByID(ctx, input.BucketID, filterID)
 	if err != nil {
 		operation.Status = "failed"
 		operation.Errors = append(operation.Errors, dto.BatchOperationError{
@@ -142,7 +148,13 @@ func (s *BatchService) BatchDelete(ctx context.Context, input dto.BatchDeleteInp
 		return nil, fmt.Errorf("failed to create batch operation: %w", err)
 	}
 
-	go s.processBatchDelete(context.Background(), operationID, input)
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	go s.processBatchDelete(context.Background(), operationID, input, filterID)
 
 	return &dto.BatchOperationOutput{
 		OperationID: operationID,
@@ -150,13 +162,13 @@ func (s *BatchService) BatchDelete(ctx context.Context, input dto.BatchDeleteInp
 	}, nil
 }
 
-func (s *BatchService) processBatchDelete(ctx context.Context, operationID string, input dto.BatchDeleteInput) {
+func (s *BatchService) processBatchDelete(ctx context.Context, operationID string, input dto.BatchDeleteInput, filterID string) {
 	operation, _ := s.repo.GetBatchOperationByID(ctx, operationID)
 	operation.Status = "processing"
 	operation.UpdatedAt = time.Now()
 	s.repo.UpdateBatchOperation(ctx, operation)
 
-	bucket, err := s.repo.GetBucketByID(ctx, input.BucketID)
+	bucket, err := s.repo.GetBucketByID(ctx, input.BucketID, filterID)
 	if err != nil {
 		operation.Status = "failed"
 		operation.Errors = append(operation.Errors, dto.BatchOperationError{
@@ -232,7 +244,13 @@ func (s *BatchService) BatchCopy(ctx context.Context, input dto.BatchCopyInput) 
 		return nil, fmt.Errorf("failed to create batch operation: %w", err)
 	}
 
-	go s.processBatchCopy(context.Background(), operationID, input)
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	go s.processBatchCopy(context.Background(), operationID, input, filterID)
 
 	return &dto.BatchOperationOutput{
 		OperationID: operationID,
@@ -240,14 +258,14 @@ func (s *BatchService) BatchCopy(ctx context.Context, input dto.BatchCopyInput) 
 	}, nil
 }
 
-func (s *BatchService) processBatchCopy(ctx context.Context, operationID string, input dto.BatchCopyInput) {
+func (s *BatchService) processBatchCopy(ctx context.Context, operationID string, input dto.BatchCopyInput, filterID string) {
 	operation, _ := s.repo.GetBatchOperationByID(ctx, operationID)
 	operation.Status = "processing"
 	operation.UpdatedAt = time.Now()
 	s.repo.UpdateBatchOperation(ctx, operation)
 
 	for i, item := range input.Items {
-		srcBucket, err := s.repo.GetBucketByID(ctx, item.SourceBucket)
+		srcBucket, err := s.repo.GetBucketByID(ctx, item.SourceBucket, filterID)
 		if err != nil {
 			operation.FailedItems++
 			operation.Errors = append(operation.Errors, dto.BatchOperationError{
@@ -258,7 +276,7 @@ func (s *BatchService) processBatchCopy(ctx context.Context, operationID string,
 			continue
 		}
 
-		dstBucket, err := s.repo.GetBucketByID(ctx, item.DestBucket)
+		dstBucket, err := s.repo.GetBucketByID(ctx, item.DestBucket, filterID)
 		if err != nil {
 			operation.FailedItems++
 			operation.Errors = append(operation.Errors, dto.BatchOperationError{
@@ -344,7 +362,13 @@ func (s *BatchService) BatchMove(ctx context.Context, input dto.BatchMoveInput) 
 		return nil, fmt.Errorf("failed to create batch operation: %w", err)
 	}
 
-	go s.processBatchMove(context.Background(), operationID, input)
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	go s.processBatchMove(context.Background(), operationID, input, filterID)
 
 	return &dto.BatchOperationOutput{
 		OperationID: operationID,
@@ -352,14 +376,14 @@ func (s *BatchService) BatchMove(ctx context.Context, input dto.BatchMoveInput) 
 	}, nil
 }
 
-func (s *BatchService) processBatchMove(ctx context.Context, operationID string, input dto.BatchMoveInput) {
+func (s *BatchService) processBatchMove(ctx context.Context, operationID string, input dto.BatchMoveInput, filterID string) {
 	operation, _ := s.repo.GetBatchOperationByID(ctx, operationID)
 	operation.Status = "processing"
 	operation.UpdatedAt = time.Now()
 	s.repo.UpdateBatchOperation(ctx, operation)
 
 	for i, item := range input.Items {
-		srcBucket, err := s.repo.GetBucketByID(ctx, item.SourceBucket)
+		srcBucket, err := s.repo.GetBucketByID(ctx, item.SourceBucket, filterID)
 		if err != nil {
 			operation.FailedItems++
 			operation.Errors = append(operation.Errors, dto.BatchOperationError{
@@ -370,7 +394,7 @@ func (s *BatchService) processBatchMove(ctx context.Context, operationID string,
 			continue
 		}
 
-		dstBucket, err := s.repo.GetBucketByID(ctx, item.DestBucket)
+		dstBucket, err := s.repo.GetBucketByID(ctx, item.DestBucket, filterID)
 		if err != nil {
 			operation.FailedItems++
 			operation.Errors = append(operation.Errors, dto.BatchOperationError{

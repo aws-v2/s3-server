@@ -42,11 +42,11 @@ type RepositoryPort interface {
 
 	// Buckets
 	SaveBucket(ctx context.Context, bucket *Bucket) (Bucket, error)
-	GetBucketByID(ctx context.Context, bucketId string) (Bucket, error)
-	GetBucketByName(ctx context.Context, name string) (Bucket, error)
-	ListBuckets(ctx context.Context) ([]Bucket, error)
-	UpdateBucket(ctx context.Context, bucket *Bucket) (*Bucket, error)
-	DeleteBucket(ctx context.Context, bucketId string) error
+	GetBucketByID(ctx context.Context, bucketId string, ownerID string) (Bucket, error)
+	GetBucketByName(ctx context.Context, name string, ownerID string) (Bucket, error)
+	ListBuckets(ctx context.Context, ownerID string) ([]Bucket, error)
+	UpdateBucket(ctx context.Context, bucket *Bucket, ownerID string) (*Bucket, error)
+	DeleteBucket(ctx context.Context, bucketId string) error // Note: Delete (and others) might already have bucketId which is semi-unique, but we should stay consistent.
 
 	// Users
 	SaveUser(ctx context.Context, user *User) (*User, error)

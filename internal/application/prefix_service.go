@@ -101,7 +101,13 @@ func (s *PrefixService) ListByPrefix(ctx context.Context, input dto.ListByPrefix
 
 // DeleteByPrefix deletes files by prefix
 func (s *PrefixService) DeleteByPrefix(ctx context.Context, input dto.DeleteByPrefixInput) (*dto.DeleteByPrefixOutput, error) {
-	bucket, err := s.repo.GetBucketByID(ctx, input.BucketID)
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	bucket, err := s.repo.GetBucketByID(ctx, input.BucketID, filterID)
 	if err != nil {
 		return nil, fmt.Errorf("bucket not found: %w", err)
 	}
@@ -133,7 +139,13 @@ func (s *PrefixService) DeleteByPrefix(ctx context.Context, input dto.DeleteByPr
 
 // CopyByPrefix copies files by prefix
 func (s *PrefixService) CopyByPrefix(ctx context.Context, input dto.CopyByPrefixInput) (*dto.CopyByPrefixOutput, error) {
-	srcBucket, err := s.repo.GetBucketByID(ctx, input.BucketID)
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	srcBucket, err := s.repo.GetBucketByID(ctx, input.BucketID, filterID)
 	if err != nil {
 		return nil, fmt.Errorf("source bucket not found: %w", err)
 	}
@@ -143,7 +155,7 @@ func (s *PrefixService) CopyByPrefix(ctx context.Context, input dto.CopyByPrefix
 		destBucketID = input.BucketID
 	}
 
-	destBucket, err := s.repo.GetBucketByID(ctx, destBucketID)
+	destBucket, err := s.repo.GetBucketByID(ctx, destBucketID, filterID)
 	if err != nil {
 		return nil, fmt.Errorf("dest bucket not found: %w", err)
 	}
@@ -219,7 +231,13 @@ func (s *PrefixService) CountByPrefix(ctx context.Context, input dto.CountByPref
 
 // ArchiveByPrefix archives files by prefix
 func (s *PrefixService) ArchiveByPrefix(ctx context.Context, input dto.ArchiveByPrefixInput) (*dto.ArchiveByPrefixOutput, error) {
-	bucket, err := s.repo.GetBucketByID(ctx, input.BucketID)
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	bucket, err := s.repo.GetBucketByID(ctx, input.BucketID, filterID)
 	if err != nil {
 		return nil, fmt.Errorf("bucket not found: %w", err)
 	}

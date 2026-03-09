@@ -30,7 +30,13 @@ func NewAnalyticsService(repo domain.RepositoryPort) *AnalyticsService {
 }
 
 func (s *AnalyticsService) GetStorageUsage(ctx context.Context) (*dto.GetStorageUsageOutput, error) {
-	buckets, err := s.repo.ListBuckets(ctx)
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	buckets, err := s.repo.ListBuckets(ctx, filterID)
 	if err != nil {
 		return nil, err
 	}
@@ -122,7 +128,13 @@ func (s *AnalyticsService) GetTrafficStats(ctx context.Context, input dto.GetTra
 }
 
 func (s *AnalyticsService) GetFileTypeDistribution(ctx context.Context) (*dto.GetFileTypeDistributionOutput, error) {
-	buckets, _ := s.repo.ListBuckets(ctx)
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	buckets, _ := s.repo.ListBuckets(ctx, filterID)
 
 	typeMap := make(map[string]*dto.FileTypeInfo)
 	totalFiles := 0
@@ -159,6 +171,18 @@ func (s *AnalyticsService) GetFileTypeDistribution(ctx context.Context) (*dto.Ge
 }
 
 func (s *AnalyticsService) GetBucketUsageOverTime(ctx context.Context, bucketID string, input dto.GetBucketUsageOverTimeInput) (*dto.GetBucketUsageOverTimeOutput, error) {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	// Verify ownership
+	_, err := s.repo.GetBucketByID(ctx, bucketID, filterID)
+	if err != nil {
+		return nil, err
+	}
+
 	days := input.Days
 	if days == 0 {
 		days = 30

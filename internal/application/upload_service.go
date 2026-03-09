@@ -66,8 +66,14 @@ type UploadFileOutput struct {
 }
 
 func (s *UploadService) UploadFile(ctx context.Context, input UploadFileInput) (*UploadFileOutput, error) {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
 	// Get bucket by name
-	bucket, err := s.repository.GetBucketByName(ctx, input.BucketID)
+	bucket, err := s.repository.GetBucketByName(ctx, input.BucketID, filterID)
 	if err != nil {
 		return nil, fmt.Errorf("bucket not found: %w", err)
 	}
@@ -126,7 +132,13 @@ func (s *UploadService) UploadFile(ctx context.Context, input UploadFileInput) (
 }
 
 func (s *UploadService) CreateFolder(ctx context.Context, bucketID, folderName string) error {
-	bucket, err := s.repository.GetBucketByID(ctx, bucketID)
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	bucket, err := s.repository.GetBucketByID(ctx, bucketID, filterID)
 	if err != nil {
 		return fmt.Errorf("bucket not found: %w", err)
 	}
@@ -165,8 +177,14 @@ func generateID() string {
 }
 
 func (s *UploadService) GetFileInfo(ctx context.Context, bucketID, fileID string) (*dto.FileInfoOutput, error) {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
 	// Get bucket by ID
-	bucket, err := s.repository.GetBucketByID(ctx, bucketID)
+	bucket, err := s.repository.GetBucketByID(ctx, bucketID, filterID)
 	if err != nil {
 		return nil, fmt.Errorf("bucket not found: %w", err)
 	}
@@ -199,8 +217,14 @@ func (s *UploadService) GetFileInfo(ctx context.Context, bucketID, fileID string
 }
 
 func (s *UploadService) ListFiles(ctx context.Context, bucketName string) ([]dto.FileInfoOutput, error) {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
 	// Get bucket by name
-	bucket, err := s.repository.GetBucketByName(ctx, bucketName)
+	bucket, err := s.repository.GetBucketByName(ctx, bucketName, filterID)
 	if err != nil {
 		return nil, fmt.Errorf("bucket not found: %w", err)
 	}
@@ -229,8 +253,13 @@ func (s *UploadService) ListFiles(ctx context.Context, bucketName string) ([]dto
 }
 
 func (s *UploadService) DownloadFile(ctx context.Context, bucketId, fileID string) ([]byte, *dto.FileInfoOutput, error) {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
 
-	bucket, err := s.repository.GetBucketByID(ctx, bucketId)
+	bucket, err := s.repository.GetBucketByID(ctx, bucketId, filterID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("bucket not found: %w", err)
 	}
@@ -265,7 +294,13 @@ func (s *UploadService) DownloadFile(ctx context.Context, bucketId, fileID strin
 }
 
 func (s *UploadService) UpdateFileMetadata(ctx context.Context, bucketID, fileID string, input dto.UpdateFileMetadataInput) (*dto.FileInfoOutput, error) {
-	bucket, err := s.repository.GetBucketByID(ctx, bucketID)
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	bucket, err := s.repository.GetBucketByID(ctx, bucketID, filterID)
 	if err != nil {
 		return nil, fmt.Errorf("bucket not found: %w", err)
 	}
@@ -300,12 +335,18 @@ func (s *UploadService) UpdateFileMetadata(ctx context.Context, bucketID, fileID
 }
 
 func (s *UploadService) CopyFile(ctx context.Context, sourceBucketID, fileID string, input dto.CopyFileInput) (*dto.FileInfoOutput, error) {
-	sourceBucket, err := s.repository.GetBucketByID(ctx, sourceBucketID)
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	sourceBucket, err := s.repository.GetBucketByID(ctx, sourceBucketID, filterID)
 	if err != nil {
 		return nil, fmt.Errorf("source bucket not found: %w", err)
 	}
 
-	destBucket, err := s.repository.GetBucketByName(ctx, input.DestinationBucket)
+	destBucket, err := s.repository.GetBucketByName(ctx, input.DestinationBucket, filterID)
 	if err != nil {
 
 		return nil, fmt.Errorf("destination bucket not found: %w", err)
@@ -357,8 +398,13 @@ func (s *UploadService) CopyFile(ctx context.Context, sourceBucketID, fileID str
 }
 
 func (s *UploadService) MoveFile(ctx context.Context, sourceBucketName, fileID string, input dto.MoveFileInput) (*dto.FileInfoOutput, error) {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
 
-	sourceBucket, err := s.repository.GetBucketByID(ctx, sourceBucketName)
+	sourceBucket, err := s.repository.GetBucketByID(ctx, sourceBucketName, filterID)
 
 	fmt.Println("File ID:", fileID)
 
@@ -366,7 +412,7 @@ func (s *UploadService) MoveFile(ctx context.Context, sourceBucketName, fileID s
 		return nil, fmt.Errorf("source bucket not found: %w", err)
 	}
 
-	destBucket, err := s.repository.GetBucketByName(ctx, input.DestinationBucket)
+	destBucket, err := s.repository.GetBucketByName(ctx, input.DestinationBucket, filterID)
 	if err != nil {
 		return nil, fmt.Errorf("destination bucket not found: %w", err)
 	}

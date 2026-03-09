@@ -106,7 +106,13 @@ func (s *BucketService) CreateBucket(ctx context.Context, input dto.CreateBucket
 }
 
 func (s *BucketService) GetBucket(ctx context.Context, bucketID string) (*dto.GetBucketOutput, error) {
-	bucket, err := s.repo.GetBucketByID(ctx, bucketID)
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	bucket, err := s.repo.GetBucketByID(ctx, bucketID, filterID)
 	if err != nil {
 		return nil, fmt.Errorf("bucket not found: %w", err)
 	}
@@ -121,11 +127,22 @@ func (s *BucketService) GetBucket(ctx context.Context, bucketID string) (*dto.Ge
 }
 
 func (s *BucketService) ListBuckets(ctx context.Context) ([]domain.Bucket, error) {
-	return s.repo.ListBuckets(ctx)
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+	return s.repo.ListBuckets(ctx, filterID)
 }
 
 func (s *BucketService) UpdateBucket(ctx context.Context, bucketID string, input dto.UpdateBucketInput) (*dto.GetBucketOutput, error) {
-	bucket, err := s.repo.GetBucketByID(ctx, bucketID)
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	bucket, err := s.repo.GetBucketByID(ctx, bucketID, filterID)
 	if err != nil {
 		return nil, fmt.Errorf("bucket not found: %w", err)
 	}
@@ -139,7 +156,7 @@ func (s *BucketService) UpdateBucket(ctx context.Context, bucketID string, input
 		return nil, fmt.Errorf("failed to rename bucket: %w", err)
 	}
 
-	updated, err := s.repo.UpdateBucket(ctx, &bucket)
+	updated, err := s.repo.UpdateBucket(ctx, &bucket, filterID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update bucket: %w", err)
 	}
@@ -152,6 +169,12 @@ func (s *BucketService) UpdateBucket(ctx context.Context, bucketID string, input
 }
 
 func (s *BucketService) DeleteBucket(ctx context.Context, bucketID string) error {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
 	files, err := s.repo.ListFiles(ctx, bucketID)
 	if err != nil {
 		return fmt.Errorf("failed to check files: %w", err)
@@ -160,7 +183,7 @@ func (s *BucketService) DeleteBucket(ctx context.Context, bucketID string) error
 	if len(files) > 0 {
 		return fmt.Errorf("cannot delete bucket with files")
 	}
-	bucket, err := s.repo.GetBucketByName(ctx, bucketID)
+	bucket, err := s.repo.GetBucketByName(ctx, bucketID, filterID)
 
 	if err != nil {
 		return fmt.Errorf("bucket not found: %w", err)
@@ -178,7 +201,13 @@ func (s *BucketService) DeleteBucket(ctx context.Context, bucketID string) error
 }
 
 func (s *BucketService) EmptyBucket(ctx context.Context, bucketID string) error {
-	bucket, err := s.repo.GetBucketByID(ctx, bucketID)
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	bucket, err := s.repo.GetBucketByID(ctx, bucketID, filterID)
 	if err != nil {
 		return fmt.Errorf("bucket not found: %w", err)
 	}
@@ -197,7 +226,18 @@ func (s *BucketService) EmptyBucket(ctx context.Context, bucketID string) error 
 }
 
 func (s *BucketService) GetBucketStats(ctx context.Context, bucketID string) (*dto.BucketStatsOutput, error) {
-	files, err := s.repo.ListFiles(ctx, bucketID)
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	bucket, err := s.repo.GetBucketByID(ctx, bucketID, filterID)
+	if err != nil {
+		return nil, fmt.Errorf("bucket not found or access denied: %w", err)
+	}
+
+	files, err := s.repo.ListFiles(ctx, bucket.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get files: %w", err)
 	}
@@ -215,7 +255,13 @@ func (s *BucketService) GetBucketStats(ctx context.Context, bucketID string) (*d
 }
 
 func (s *BucketService) GetBucketPolicy(ctx context.Context, bucketID string) (*dto.BucketPolicyOutput, error) {
-	bucket, err := s.repo.GetBucketByID(ctx, bucketID)
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	bucket, err := s.repo.GetBucketByID(ctx, bucketID, filterID)
 	if err != nil {
 		return nil, fmt.Errorf("bucket not found: %w", err)
 	}
@@ -231,15 +277,21 @@ func (s *BucketService) GetBucketPolicy(ctx context.Context, bucketID string) (*
 	}, nil
 }
 
-func (s *BucketService) UpdateBucketPolicy(ctx context.Context, bucketID string, input dto.UpdatePolicyInput, actor string) error {
-	// actor is "user:<id>" or "role:admin"
-	bucket, err := s.repo.GetBucketByID(ctx, bucketID)
+func (s *BucketService) UpdateBucketPolicy(ctx context.Context, bucketID string, input dto.UpdatePolicyInput, actorID string) error {
+	// actorID is "user:<id>" or "role:admin"
+
+	filterID := actorID
+	if IsAdmin(actorID) {
+		filterID = ""
+	}
+
+	bucket, err := s.repo.GetBucketByID(ctx, bucketID, filterID)
 	if err != nil {
 		return fmt.Errorf("bucket not found: %w", err)
 	}
 
 	// Permission: only owner or admin can update
-	if actor != fmt.Sprintf("user:%s", bucket.OwnerID) && !IsAdmin(actor) {
+	if actorID != fmt.Sprintf("user:%s", bucket.OwnerID) && !IsAdmin(actorID) {
 		return errors.New("forbidden: only bucket owner or admin can update policy")
 	}
 
@@ -279,13 +331,19 @@ func (s *BucketService) UpdateBucketPolicy(ctx context.Context, bucketID string,
 	}
 
 	// audit / history - optional
-	_ = s.repo.AppendPolicyHistory(ctx, bucketID, &policy, actor)
+	_ = s.repo.AppendPolicyHistory(ctx, bucketID, &policy, actorID)
 
 	return nil
 }
 
 func (s *BucketService) SetBucketVersioning(ctx context.Context, bucketID string, enabled bool) error {
-	bucket, err := s.repo.GetBucketByID(ctx, bucketID)
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	bucket, err := s.repo.GetBucketByID(ctx, bucketID, filterID)
 	if err != nil {
 		return fmt.Errorf("bucket not found: %w", err)
 	}
@@ -326,6 +384,18 @@ func IsAdmin(actor string) bool {
 }
 
 func (s *BucketService) GetBucketVersioning(ctx context.Context, bucketID string) (*dto.VersioningOutput, error) {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	// Verify bucket ownership first
+	_, err := s.repo.GetBucketByID(ctx, bucketID, filterID)
+	if err != nil {
+		return nil, err
+	}
+
 	// Get versioning status from database
 	status, err := s.repo.GetBucketVersioning(ctx, bucketID)
 	if err != nil {
@@ -338,6 +408,18 @@ func (s *BucketService) GetBucketVersioning(ctx context.Context, bucketID string
 }
 
 func (s *BucketService) SetBucketLifecycle(ctx context.Context, bucketID string, input dto.SetLifecycleInput) error {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	// Verify bucket ownership first
+	_, err := s.repo.GetBucketByID(ctx, bucketID, filterID)
+	if err != nil {
+		return err
+	}
+
 	for _, ruleInput := range input.Rules {
 		// Map DTO to domain
 		rule := domain.LifecycleRule{

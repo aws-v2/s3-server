@@ -413,7 +413,7 @@ func (r *PostgresRepository) GetFileByID(ctx context.Context, id string) (*domai
 }
 
 // UpdateBucket implements domain.RepositoryPort.
-func (r *PostgresRepository) UpdateBucket(ctx context.Context, bucket *domain.Bucket) (*domain.Bucket, error) {
+func (r *PostgresRepository) UpdateBucket(ctx context.Context, bucket *domain.Bucket, ownerID string) (*domain.Bucket, error) {
 	var err error
 	var policyParam interface{}
 
@@ -428,12 +428,12 @@ func (r *PostgresRepository) UpdateBucket(ctx context.Context, bucket *domain.Bu
 
 	query := `UPDATE buckets 
 	          SET name = $1, updated_at = $2, policy = $3::jsonb 
-	          WHERE id = $4 
+	          WHERE id = $4 AND ($5 = '' OR owner_id = $5)
 	          RETURNING id, name, created_at, updated_at, policy`
 
 	var returnedPolicy []byte
 
-	err = r.db.QueryRowContext(ctx, query, bucket.Name, bucket.UpdatedAt, policyParam, bucket.ID).Scan(
+	err = r.db.QueryRowContext(ctx, query, bucket.Name, bucket.UpdatedAt, policyParam, bucket.ID, ownerID).Scan(
 		&bucket.ID, &bucket.Name, &bucket.CreatedAt, &bucket.UpdatedAt, &returnedPolicy,
 	)
 
@@ -498,18 +498,23 @@ func (r *PostgresRepository) IncrementPolicyVersionAndUpdateBucket(ctx context.C
 	return nil
 }
 
-func (r *PostgresRepository) GetBucketByName(ctx context.Context, name string) (domain.Bucket, error) {
+func (r *PostgresRepository) GetBucketByName(ctx context.Context, name string, ownerID string) (domain.Bucket, error) {
 
-	query := `SELECT id, name, created_at, updated_at, policy FROM buckets WHERE name = $1`
+	query := `SELECT id, name, owner_id, arn, region, bucket_type, object_ownership, created_at, updated_at, policy FROM buckets WHERE name = $1 AND ($2 = '' OR owner_id = $2)`
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	var bucket domain.Bucket
 	var policyJSON []byte
 
-	err := r.db.QueryRowContext(ctx, query, name).Scan(
+	err := r.db.QueryRowContext(ctx, query, name, ownerID).Scan(
 		&bucket.ID,
 		&bucket.Name,
+		&bucket.OwnerID,
+		&bucket.ARN,
+		&bucket.Region,
+		&bucket.BucketType,
+		&bucket.ObjectOwnership,
 		&bucket.CreatedAt,
 		&bucket.UpdatedAt,
 		&policyJSON,
@@ -767,17 +772,18 @@ func (r *PostgresRepository) SaveBucket(ctx context.Context, bucket *domain.Buck
 }
 
 // ListBuckets retrieves all buckets
-func (r *PostgresRepository) ListBuckets(ctx context.Context) ([]domain.Bucket, error) {
+func (r *PostgresRepository) ListBuckets(ctx context.Context, ownerID string) ([]domain.Bucket, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
 	query := `
-	SELECT id, name, owner_id, created_at, updated_at,region , bucket_type
+	SELECT id, name, owner_id, created_at, updated_at, region, bucket_type
 	FROM buckets
+	WHERE ($1 = '' OR owner_id = $1)
 	ORDER BY created_at DESC
 `
 
-	rows, err := r.db.QueryContext(ctx, query)
+	rows, err := r.db.QueryContext(ctx, query, ownerID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query buckets: %w", err)
 	}
@@ -810,22 +816,27 @@ func (r *PostgresRepository) ListBuckets(ctx context.Context) ([]domain.Bucket, 
 	return buckets, nil
 }
 
-func (r *PostgresRepository) GetBucketByID(ctx context.Context, bucketID string) (domain.Bucket, error) {
+func (r *PostgresRepository) GetBucketByID(ctx context.Context, bucketID string, ownerID string) (domain.Bucket, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	query := `
-		SELECT id, name, created_at, updated_at, policy
+		SELECT id, name, owner_id, arn, region, bucket_type, object_ownership, created_at, updated_at, policy
 		FROM buckets
-		WHERE id = $1
+		WHERE id = $1 AND ($2 = '' OR owner_id = $2)
 	`
 
 	var bucket domain.Bucket
 	var policyJSON []byte
 
-	err := r.db.QueryRowContext(ctx, query, bucketID).Scan(
+	err := r.db.QueryRowContext(ctx, query, bucketID, ownerID).Scan(
 		&bucket.ID,
 		&bucket.Name,
+		&bucket.OwnerID,
+		&bucket.ARN,
+		&bucket.Region,
+		&bucket.BucketType,
+		&bucket.ObjectOwnership,
 		&bucket.CreatedAt,
 		&bucket.UpdatedAt,
 		&policyJSON,
