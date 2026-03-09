@@ -120,7 +120,7 @@ func (s *PrefixService) DeleteByPrefix(ctx context.Context, input dto.DeleteByPr
 	deletedKeys := []string{}
 
 	for _, file := range files {
-		if err := s.storage.DeleteObject(ctx, bucket.Name, file.Key); err != nil {
+		if err := s.storage.DeleteObject(ctx, bucket.StorageName, file.Key); err != nil {
 			continue
 		}
 
@@ -170,7 +170,7 @@ func (s *PrefixService) CopyByPrefix(ctx context.Context, input dto.CopyByPrefix
 	for _, file := range files {
 		newKey := strings.Replace(file.Key, input.SourcePrefix, input.DestPrefix, 1)
 
-		if err := s.storage.CopyObject(ctx, srcBucket.Name, file.Key, destBucket.Name, newKey); err != nil {
+		if err := s.storage.CopyObject(ctx, srcBucket.StorageName, file.Key, destBucket.StorageName, newKey); err != nil {
 			continue
 		}
 
@@ -261,7 +261,7 @@ func (s *PrefixService) ArchiveByPrefix(ctx context.Context, input dto.ArchiveBy
 
 	switch format {
 	case "zip":
-		archiveData, archiveErr = s.createZipArchive(ctx, bucket.Name, files)
+		archiveData, archiveErr = s.createZipArchive(ctx, bucket.StorageName, files)
 	default:
 		return nil, fmt.Errorf("unsupported archive format: %s", format)
 	}
@@ -275,7 +275,7 @@ func (s *PrefixService) ArchiveByPrefix(ctx context.Context, input dto.ArchiveBy
 		archiveKey += "." + format
 	}
 
-	if err := s.storage.SaveObject(ctx, bucket.Name, archiveKey, archiveData, map[string]string{
+	if err := s.storage.SaveObject(ctx, bucket.StorageName, archiveKey, archiveData, map[string]string{
 		"archive-type": format,
 		"file-count":   fmt.Sprintf("%d", len(files)),
 	}); err != nil {
@@ -312,6 +312,8 @@ func (s *PrefixService) createZipArchive(ctx context.Context, bucketName string,
 	zipWriter := zip.NewWriter(buf)
 
 	for _, file := range files {
+		// Note: This logic seems to download data to create a zip.
+		// It should also use StorageName.
 		data, err := s.storage.GetObject(ctx, bucketName, file.Key)
 		if err != nil {
 			continue

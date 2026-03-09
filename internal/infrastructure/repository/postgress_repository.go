@@ -500,7 +500,7 @@ func (r *PostgresRepository) IncrementPolicyVersionAndUpdateBucket(ctx context.C
 
 func (r *PostgresRepository) GetBucketByName(ctx context.Context, name string, ownerID string) (domain.Bucket, error) {
 
-	query := `SELECT id, name, owner_id, arn, region, bucket_type, object_ownership, created_at, updated_at, policy FROM buckets WHERE name = $1 AND ($2 = '' OR owner_id = $2)`
+	query := `SELECT id, name, owner_id, arn, region, bucket_type, object_ownership, created_at, updated_at, policy, storage_name FROM buckets WHERE name = $1 AND ($2 = '' OR owner_id = $2)`
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
@@ -518,6 +518,7 @@ func (r *PostgresRepository) GetBucketByName(ctx context.Context, name string, o
 		&bucket.CreatedAt,
 		&bucket.UpdatedAt,
 		&policyJSON,
+		&bucket.StorageName,
 	)
 
 	if err != nil {
@@ -730,10 +731,10 @@ func (r *PostgresRepository) SaveBucket(ctx context.Context, bucket *domain.Buck
 		INSERT INTO buckets (
 			id, name, owner_id, region, bucket_type, object_ownership, 
 			block_public_access, versioning_status, tags, encryption, 
-			object_lock, arn, created_at, updated_at
+			object_lock, arn, storage_name, created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-		RETURNING id, name, owner_id, arn, created_at, updated_at
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+		RETURNING id, name, owner_id, arn, storage_name, created_at, updated_at
 	`
 
 	var result domain.Bucket
@@ -750,6 +751,7 @@ func (r *PostgresRepository) SaveBucket(ctx context.Context, bucket *domain.Buck
 		encJSON,
 		bucket.ObjectLock,
 		bucket.ARN,
+		bucket.StorageName,
 		bucket.CreatedAt,
 		bucket.UpdatedAt,
 	).Scan(
@@ -757,6 +759,7 @@ func (r *PostgresRepository) SaveBucket(ctx context.Context, bucket *domain.Buck
 		&result.Name,
 		&result.OwnerID,
 		&result.ARN,
+		&result.StorageName,
 		&result.CreatedAt,
 		&result.UpdatedAt,
 	)
@@ -777,7 +780,7 @@ func (r *PostgresRepository) ListBuckets(ctx context.Context, ownerID string) ([
 	defer cancel()
 
 	query := `
-	SELECT id, name, owner_id, created_at, updated_at, region, bucket_type
+	SELECT id, name, owner_id, created_at, updated_at, region, bucket_type, storage_name
 	FROM buckets
 	WHERE ($1 = '' OR owner_id = $1)
 	ORDER BY created_at DESC
@@ -800,6 +803,7 @@ func (r *PostgresRepository) ListBuckets(ctx context.Context, ownerID string) ([
 			&bucket.UpdatedAt,
 			&bucket.Region,
 			&bucket.BucketType,
+			&bucket.StorageName,
 		)
 
 		if err != nil {
@@ -821,7 +825,7 @@ func (r *PostgresRepository) GetBucketByID(ctx context.Context, bucketID string,
 	defer cancel()
 
 	query := `
-		SELECT id, name, owner_id, arn, region, bucket_type, object_ownership, created_at, updated_at, policy
+		SELECT id, name, owner_id, arn, region, bucket_type, object_ownership, created_at, updated_at, policy, storage_name
 		FROM buckets
 		WHERE id = $1 AND ($2 = '' OR owner_id = $2)
 	`
@@ -840,6 +844,7 @@ func (r *PostgresRepository) GetBucketByID(ctx context.Context, bucketID string,
 		&bucket.CreatedAt,
 		&bucket.UpdatedAt,
 		&policyJSON,
+		&bucket.StorageName,
 	)
 
 	if err != nil {

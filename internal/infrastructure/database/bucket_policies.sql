@@ -20,14 +20,15 @@ DROP TABLE IF EXISTS schema_migrations CASCADE;
 CREATE TABLE buckets (
     id VARCHAR(255) NOT NULL,
     name VARCHAR(255) NOT NULL,
+    storage_name VARCHAR(255) NOT NULL UNIQUE,
     created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL,
     updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL,
     policy JSONB,
-     policy_version INTEGER DEFAULT 1 NOT NULL,
-      versioning_status VARCHAR(16) NOT NULL DEFAULT 'Suspended'
+    policy_version INTEGER DEFAULT 1 NOT NULL,
+    versioning_status VARCHAR(16) NOT NULL DEFAULT 'Suspended',
     owner_id VARCHAR(255) NOT NULL,
     CONSTRAINT buckets_pkey PRIMARY KEY (id),
-    CONSTRAINT buckets_name_key UNIQUE (name)
+    CONSTRAINT buckets_owner_name_key UNIQUE (owner_id, name)
 );
 
 CREATE TABLE object_versions (

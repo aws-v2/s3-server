@@ -4,13 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"os"
-	"strings"
-
 	"fmt"
+	"os"
 	"s3/internal/domain"
 	"s3/internal/infrastructure/dto"
+	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // BucketService provides business logic for managing buckets.
@@ -23,6 +24,10 @@ type BucketAlreadyExists struct {
 	Name string
 }
 
+func (e *BucketAlreadyExists) Error() string {
+	return fmt.Sprintf("bucket %s already exists", e.Name)
+}
+
 // NewBucketService creates a new instance of BucketService.
 func NewBucketService(repo domain.RepositoryPort, storage domain.StoragePort) *BucketService {
 	return &BucketService{
@@ -30,23 +35,26 @@ func NewBucketService(repo domain.RepositoryPort, storage domain.StoragePort) *B
 		storage: storage,
 	}
 }
-func (e *BucketAlreadyExists) Error() string {
-	return fmt.Sprintf("bucket %s already exists", e.Name)
-}
 
 func (s *BucketService) CreateBucket(ctx context.Context, input dto.CreateBucketInput) (*dto.CreateBucketOutput, error) {
 	if input.Name == "" {
 		return nil, fmt.Errorf("bucket name is required")
 	}
 
-	// Try to create bucket in storage
-	bucketId, err := s.storage.CreateBucket(ctx, input.Name)
+	// Check if logical name already exists for this user
+	existing, err := s.repo.GetBucketByName(ctx, input.Name, input.OwnerId)
+	if err == nil && existing.ID != "" {
+		return nil, &BucketAlreadyExists{Name: input.Name}
+	}
+
+	// Generate ID and Storage name (Physical name in MinIO)
+	bucketId := uuid.New().String()
+	storageName := fmt.Sprintf("bucket-%s", strings.ReplaceAll(bucketId, "-", ""))
+
+	// Try to create physical bucket in storage (MinIO)
+	_, err = s.storage.CreateBucket(ctx, storageName)
 	if err != nil {
-		// Handle "bucket already exists" gracefully using type assertion
-		if _, ok := err.(*BucketAlreadyExists); ok {
-			return nil, fmt.Errorf("bucket already exists: %s", input.Name)
-		}
-		return nil, fmt.Errorf("%w", err)
+		return nil, fmt.Errorf("failed to create physical bucket: %w", err)
 	}
 
 	// Determine versioning status
@@ -86,9 +94,10 @@ func (s *BucketService) CreateBucket(ctx context.Context, input dto.CreateBucket
 			Type:             input.Encryption.Type,
 			BucketKeyEnabled: input.Encryption.BucketKeyEnabled,
 		},
-		ObjectLock: input.ObjectLock,
-		CreatedAt:  time.Now(),
-		UpdatedAt:  time.Now(),
+		ObjectLock:  input.ObjectLock,
+		StorageName: storageName,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
 	}
 
 	// Save metadata in repository
@@ -132,6 +141,7 @@ func (s *BucketService) ListBuckets(ctx context.Context) ([]domain.Bucket, error
 	if IsAdmin(actor.ID) {
 		filterID = ""
 	}
+	fmt.Printf("-------------------*-%s-*------------", actor)
 	return s.repo.ListBuckets(ctx, filterID)
 }
 
@@ -151,10 +161,10 @@ func (s *BucketService) UpdateBucket(ctx context.Context, bucketID string, input
 		bucket.Name = input.Name
 		bucket.UpdatedAt = time.Now()
 	}
-	error := s.storage.RenameBucket(ctx, bucket.Name, input.Name)
-	if error != nil {
-		return nil, fmt.Errorf("failed to rename bucket: %w", err)
-	}
+	// Note: We don't rename the physical bucket in MinIO because StorageName is immutable/UUID.
+	// We only update the logical Name in the database.
+	// If you want to rename in storage: error := s.storage.RenameBucket(ctx, bucket.StorageName, ...)
+	// But it's better to keep physical names stable.
 
 	updated, err := s.repo.UpdateBucket(ctx, &bucket, filterID)
 	if err != nil {
@@ -189,7 +199,7 @@ func (s *BucketService) DeleteBucket(ctx context.Context, bucketID string) error
 		return fmt.Errorf("bucket not found: %w", err)
 	}
 
-	if err := s.storage.DeleteBucket(ctx, bucket.Name); err != nil {
+	if err := s.storage.DeleteBucket(ctx, bucket.StorageName); err != nil {
 
 		return fmt.Errorf("failed to delete from storage: %w", err)
 	}
@@ -213,7 +223,7 @@ func (s *BucketService) EmptyBucket(ctx context.Context, bucketID string) error 
 	}
 
 	// 1. Delete all objects from storage
-	if err := s.storage.EmptyBucket(ctx, bucket.Name); err != nil {
+	if err := s.storage.EmptyBucket(ctx, bucket.StorageName); err != nil {
 		return fmt.Errorf("failed to empty storage: %w", err)
 	}
 
@@ -349,7 +359,7 @@ func (s *BucketService) SetBucketVersioning(ctx context.Context, bucketID string
 	}
 
 	// Set versioning in storage layer (MinIO)
-	if err := s.storage.SetBucketVersioning(ctx, bucket.Name, enabled); err != nil {
+	if err := s.storage.SetBucketVersioning(ctx, bucket.StorageName, enabled); err != nil {
 		return fmt.Errorf("failed to set versioning in storage: %w", err)
 	}
 
@@ -367,16 +377,20 @@ func (s *BucketService) SetBucketVersioning(ctx context.Context, bucketID string
 
 // isAdmin checks whether the actor (like "user:abc123") is an admin.
 // In MVP mode, we load admin IDs from an env var: ADMIN_USERS=user:abc123,user:def456
-func IsAdmin(actor string) bool {
+func IsAdmin(actorID string) bool {
 	admins := os.Getenv("ADMIN_USERS")
 
-	// fallback for tests only — change or remove for production
+	// fallback for tests only
 	if strings.TrimSpace(admins) == "" {
-		admins = "user:550e8400-e29b-41d4-a716-446655440000" // <-- dummy admin for testing; remove/override in prod
+		admins = "550e8400-e29b-41d4-a716-446655440000" // Dummy admin ID
 	}
 
 	for _, a := range strings.Split(admins, ",") {
-		if strings.TrimSpace(a) == actor {
+		adminID := strings.TrimSpace(a)
+		// Handle both "user:UUID" and "UUID" formats in the environment variable
+		adminID = strings.TrimPrefix(adminID, "user:")
+
+		if adminID == actorID {
 			return true
 		}
 	}

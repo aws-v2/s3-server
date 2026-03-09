@@ -1,6 +1,8 @@
 package middleware
 
 import (
+	"context"
+	"fmt"
 	"s3/internal/domain"
 	"strings"
 
@@ -35,13 +37,26 @@ func ExtractUserIDMiddleware() gin.HandlerFunc {
 		}
 
 		if claims, ok := token.Claims.(jwt.MapClaims); ok {
+			// Try standard 'sub' first, then 'userId' fallback
 			userID, _ := claims["sub"].(string)
+			if userID == "" {
+				userID, _ = claims["userId"].(string)
+			}
+
 			if userID != "" {
-				c.Set("actor", domain.Actor{
+				actor := domain.Actor{
 					ID:   userID,
 					Type: domain.ActorUser,
 					Auth: "bearer",
-				})
+				}
+				c.Set("actor", actor)
+
+				// Promote to request context so service layer can see it
+				ctx := context.WithValue(c.Request.Context(), "actor", actor)
+				c.Request = c.Request.WithContext(ctx)
+			} else {
+				// Log claims structure for debugging if ID is missing
+				fmt.Printf("JWT_DEBUG: No ID found in claims: %v\n", claims)
 			}
 		}
 

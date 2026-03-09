@@ -8,6 +8,8 @@ import (
 
 	"s3/internal/domain"
 	"s3/internal/infrastructure/dto"
+
+	"github.com/google/uuid"
 )
 
 type UploadService struct {
@@ -100,7 +102,7 @@ func (s *UploadService) UploadFile(ctx context.Context, input UploadFileInput) (
 		}
 
 		// Save to MinIO
-		err = s.storage.SaveObject(ctx, bucket.Name, objectKey, fileData, metaMap)
+		err = s.storage.SaveObject(ctx, bucket.StorageName, objectKey, fileData, metaMap)
 		if err != nil {
 			return nil, fmt.Errorf("failed to save object %s: %w", objectKey, err)
 		}
@@ -150,7 +152,7 @@ func (s *UploadService) CreateFolder(ctx context.Context, bucketID, folderName s
 	}
 
 	// 1. Save 0-byte object to storage
-	if err := s.storage.SaveObject(ctx, bucket.Name, folderKey, []byte{}, nil); err != nil {
+	if err := s.storage.SaveObject(ctx, bucket.StorageName, folderKey, []byte{}, nil); err != nil {
 		return fmt.Errorf("failed to create folder in storage: %w", err)
 	}
 
@@ -172,8 +174,9 @@ func (s *UploadService) CreateFolder(ctx context.Context, bucketID, folderName s
 }
 
 // Simple ID generator (you can use UUID library later)
+// generateID returns a new unique identifier
 func generateID() string {
-	return fmt.Sprintf("%d", time.Now().UnixNano())
+	return uuid.New().String()
 }
 
 func (s *UploadService) GetFileInfo(ctx context.Context, bucketID, fileID string) (*dto.FileInfoOutput, error) {
@@ -275,7 +278,7 @@ func (s *UploadService) DownloadFile(ctx context.Context, bucketId, fileID strin
 	}
 
 	// Get file data from storage
-	data, err := s.storage.GetObject(ctx, bucket.Name, file.Key)
+	data, err := s.storage.GetObject(ctx, bucket.StorageName, file.Key)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to retrieve file: %w", err)
 	}
@@ -304,12 +307,9 @@ func (s *UploadService) UpdateFileMetadata(ctx context.Context, bucketID, fileID
 	if err != nil {
 		return nil, fmt.Errorf("bucket not found: %w", err)
 	}
-	fmt.Println("err1%w", bucket.ID)
-	fmt.Println("err99 %w", fileID)
 
 	file, err := s.repository.GetFileByID(ctx, fileID)
 	if err != nil {
-		fmt.Println("err2")
 		return nil, fmt.Errorf("file not found: %w", err)
 	}
 
@@ -367,7 +367,7 @@ func (s *UploadService) CopyFile(ctx context.Context, sourceBucketID, fileID str
 	}
 
 	// Copy in storage
-	if err := s.storage.CopyObject(ctx, sourceBucket.Name, file.Key, destBucket.Name, newKey); err != nil {
+	if err := s.storage.CopyObject(ctx, sourceBucket.StorageName, file.Key, destBucket.StorageName, newKey); err != nil {
 		return nil, fmt.Errorf("failed to copy file: %w", err)
 	}
 
@@ -405,9 +405,6 @@ func (s *UploadService) MoveFile(ctx context.Context, sourceBucketName, fileID s
 	}
 
 	sourceBucket, err := s.repository.GetBucketByID(ctx, sourceBucketName, filterID)
-
-	fmt.Println("File ID:", fileID)
-
 	if err != nil {
 		return nil, fmt.Errorf("source bucket not found: %w", err)
 	}
@@ -432,12 +429,12 @@ func (s *UploadService) MoveFile(ctx context.Context, sourceBucketName, fileID s
 	}
 
 	// Copy to destination
-	if err := s.storage.CopyObject(ctx, sourceBucket.Name, file.Key, destBucket.Name, newKey); err != nil {
+	if err := s.storage.CopyObject(ctx, sourceBucket.StorageName, file.Key, destBucket.StorageName, newKey); err != nil {
 		return nil, fmt.Errorf("failed to move file: %w", err)
 	}
 
 	// Delete from source
-	if err := s.storage.DeleteObject(ctx, sourceBucket.Name, file.Key); err != nil {
+	if err := s.storage.DeleteObject(ctx, sourceBucket.StorageName, file.Key); err != nil {
 		return nil, fmt.Errorf("failed to delete source file: %w", err)
 	}
 
