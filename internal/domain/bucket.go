@@ -17,7 +17,7 @@ type Bucket struct {
 	CreatedAt         time.Time         `json:"created_at"`
 	UpdatedAt         time.Time         `json:"updated_at"`
 	Policy            *Policy           `json:"policy,omitempty"`
-	
+	ARN               string            `json:"arn"`
 }
 
 type BlockPublicAccess struct {

@@ -19,7 +19,6 @@ type Handlers struct {
 	Webhook      *WebhookHandler
 	Multipart    *MultipartHandler
 	Analytics    *AnalyticsHandler
-	Auth         *AuthHandler
 	Validator    middleware.APIKeyValidator
 	JWTValidator domain.JWTValidator
 }
@@ -37,7 +36,6 @@ func RegisterRoutes(router *gin.Engine, handlers *Handlers) {
 	v1.Use(handlers.Analytics.TrackRequestMiddleware())
 
 	// Register domain-specific routes
-	registerAuthRoutes(v1, handlers.Auth)
 	registerObjectRoutes(v1, handlers.File, handlers.Validator)
 	registerBucketRoutes(v1, handlers.Bucket, handlers.Validator)
 	registerHealthRoutes(v1, handlers.Health)
@@ -51,30 +49,9 @@ func RegisterRoutes(router *gin.Engine, handlers *Handlers) {
 
 }
 
- 
-
-// registerAuthRoutes registers authentication routes
-func registerAuthRoutes(v1 *gin.RouterGroup, handler *AuthHandler) {
-	auth := v1.Group("/auth")
-	{
-		// Public routes (no authentication required)
-		auth.POST("/register", handler.Register)
-		auth.POST("/login", handler.Login)
-
-		// Protected routes (require authentication)
-		protected := auth.Group("")
-		protected.Use(middleware.RequireAuth())
-		{
-			protected.GET("/me", handler.GetCurrentUser)
-		}
-	}
-}
-
 // registerHealthRoutes registers all health check routes
 func registerHealthRoutes(v1 *gin.RouterGroup, handler *HandlerForHealth) {
 
-	
-	
 	health := v1.Group("/health")
 	{
 		health.GET("/ping", handler.Ping)
@@ -125,6 +102,7 @@ func registerObjectRoutes(v1 *gin.RouterGroup, handler *HandlerForFiles, validat
 // registerBucketRoutes registers all bucket management routes
 func registerBucketRoutes(v1 *gin.RouterGroup, handler *BucketHandler, validator middleware.APIKeyValidator) {
 	buckets := v1.Group("/buckets")
+	buckets.Use(middleware.ExtractUserIDMiddleware())
 
 	// buckets.Use(middleware.APIKeyAuthMiddleware(validator))------------>>IAM
 	{

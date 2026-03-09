@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"s3/internal/application"
+	"s3/internal/domain"
 	"s3/internal/infrastructure/dto"
 	"strings"
 
@@ -41,9 +42,12 @@ func (h *BucketHandler) CreateBucket(c *gin.Context) {
 
 	actorI, ok := c.Get("actor")
 	if ok {
-		actor := actorI.(string)
-		if strings.HasPrefix(actor, "user:") {
-			input.OwnerId = strings.TrimPrefix(actor, "user:")
+		if actor, ok := actorI.(domain.Actor); ok {
+			input.OwnerId = actor.ID
+		} else if actorStr, ok := actorI.(string); ok {
+			if strings.HasPrefix(actorStr, "user:") {
+				input.OwnerId = strings.TrimPrefix(actorStr, "user:")
+			}
 		}
 	}
 
@@ -85,7 +89,6 @@ func (h *BucketHandler) ListBuckets(c *gin.Context) {
 		"buckets": buckets,
 	})
 }
-
 
 // GET /:bucketId
 func (h *BucketHandler) GetBucketInfo(c *gin.Context) {

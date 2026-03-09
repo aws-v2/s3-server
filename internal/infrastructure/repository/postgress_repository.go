@@ -725,10 +725,10 @@ func (r *PostgresRepository) SaveBucket(ctx context.Context, bucket *domain.Buck
 		INSERT INTO buckets (
 			id, name, owner_id, region, bucket_type, object_ownership, 
 			block_public_access, versioning_status, tags, encryption, 
-			object_lock, created_at, updated_at
+			object_lock, arn, created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-		RETURNING id, name, owner_id, created_at, updated_at
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+		RETURNING id, name, owner_id, arn, created_at, updated_at
 	`
 
 	var result domain.Bucket
@@ -744,12 +744,14 @@ func (r *PostgresRepository) SaveBucket(ctx context.Context, bucket *domain.Buck
 		tagsJSON,
 		encJSON,
 		bucket.ObjectLock,
+		bucket.ARN,
 		bucket.CreatedAt,
 		bucket.UpdatedAt,
 	).Scan(
 		&result.ID,
 		&result.Name,
 		&result.OwnerID,
+		&result.ARN,
 		&result.CreatedAt,
 		&result.UpdatedAt,
 	)
@@ -792,7 +794,6 @@ func (r *PostgresRepository) ListBuckets(ctx context.Context) ([]domain.Bucket, 
 			&bucket.UpdatedAt,
 			&bucket.Region,
 			&bucket.BucketType,
-			
 		)
 
 		if err != nil {
