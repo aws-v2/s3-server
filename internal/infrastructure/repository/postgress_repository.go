@@ -780,7 +780,7 @@ func (r *PostgresRepository) ListBuckets(ctx context.Context, ownerID string) ([
 	defer cancel()
 
 	query := `
-	SELECT id, name, owner_id, created_at, updated_at, region, bucket_type, storage_name
+	SELECT id, name, owner_id, created_at, updated_at, region, bucket_type, storage_name, arn
 	FROM buckets
 	WHERE ($1 = '' OR owner_id = $1)
 	ORDER BY created_at DESC
@@ -804,6 +804,7 @@ func (r *PostgresRepository) ListBuckets(ctx context.Context, ownerID string) ([
 			&bucket.Region,
 			&bucket.BucketType,
 			&bucket.StorageName,
+			&bucket.ARN,
 		)
 
 		if err != nil {
