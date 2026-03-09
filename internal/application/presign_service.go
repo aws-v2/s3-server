@@ -32,12 +32,18 @@ func NewPresignService(repo domain.RepositoryPort, storage domain.StoragePort, s
 
 // GenerateUploadURL creates a presigned URL for uploading
 func (s *PresignService) GenerateUploadURL(ctx context.Context, input dto.GenerateUploadURLInput) (*dto.GenerateUploadURLOutput, error) {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
 	if input.Key == "" {
 		return nil, fmt.Errorf("key is required")
 	}
 
 	// Verify bucket exists
-	bucket, err := s.repo.GetBucketByID(ctx, input.BucketID)
+	bucket, err := s.repo.GetBucketByID(ctx, input.BucketID, filterID)
 	if err != nil {
 		return nil, fmt.Errorf("bucket not found: %w", err)
 	}
@@ -96,6 +102,12 @@ func (s *PresignService) signString(data string) string {
 
 // GenerateDownloadURL creates a presigned URL for downloading
 func (s *PresignService) GenerateDownloadURL(ctx context.Context, input dto.GenerateDownloadURLInput) (*dto.GenerateDownloadURLOutput, error) {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
 	// Verify file exists
 	file, err := s.repo.GetFileByID(ctx, input.FileID)
 	if err != nil {
@@ -106,7 +118,7 @@ func (s *PresignService) GenerateDownloadURL(ctx context.Context, input dto.Gene
 		return nil, fmt.Errorf("file does not belong to specified bucket")
 	}
 
-	bucket, err := s.repo.GetBucketByID(ctx, input.BucketID)
+	bucket, err := s.repo.GetBucketByID(ctx, input.BucketID, filterID)
 	if err != nil {
 		return nil, fmt.Errorf("bucket not found: %w", err)
 	}
@@ -224,6 +236,12 @@ func (s *PresignService) ValidatePresignedURL(ctx context.Context, input dto.Val
 
 // GenerateMultipartUploadURLs creates presigned URLs for multipart upload
 func (s *PresignService) GenerateMultipartUploadURLs(ctx context.Context, input dto.GenerateMultipartUploadURLsInput) (*dto.GenerateMultipartUploadURLsOutput, error) {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
 	if input.Key == "" {
 		return nil, fmt.Errorf("key is required")
 	}
@@ -232,7 +250,7 @@ func (s *PresignService) GenerateMultipartUploadURLs(ctx context.Context, input 
 	}
 
 	// Verify bucket exists
-	bucket, err := s.repo.GetBucketByID(ctx, input.BucketID)
+	bucket, err := s.repo.GetBucketByID(ctx, input.BucketID, filterID)
 	if err != nil {
 		return nil, fmt.Errorf("bucket not found: %w", err)
 	}
@@ -323,6 +341,12 @@ func (s *PresignService) generateMultipartSignedURL(urlID, bucketName, key strin
 
 // CompleteMultipartUpload combines uploaded parts into final file
 func (s *PresignService) CompleteMultipartUpload(ctx context.Context, input dto.CompleteMultipartUploadInput) (*dto.FileInfo, error) {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
 	// Verify multipart upload exists
 	upload, err := s.repo.GetMultipartUploadByUploadID(ctx, input.UploadID)
 	if err != nil {
@@ -333,7 +357,7 @@ func (s *PresignService) CompleteMultipartUpload(ctx context.Context, input dto.
 		return nil, fmt.Errorf("upload does not belong to specified bucket")
 	}
 
-	bucket, err := s.repo.GetBucketByID(ctx, input.BucketID)
+	bucket, err := s.repo.GetBucketByID(ctx, input.BucketID, filterID)
 	if err != nil {
 		return nil, fmt.Errorf("bucket not found: %w", err)
 	}
@@ -416,6 +440,12 @@ func (s *PresignService) CompleteMultipartUpload(ctx context.Context, input dto.
 
 // AbortMultipartUpload cancels upload and cleans up parts
 func (s *PresignService) AbortMultipartUpload(ctx context.Context, input dto.AbortMultipartUploadInput) error {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
 	// Verify upload exists
 	upload, err := s.repo.GetMultipartUploadByUploadID(ctx, input.UploadID)
 	if err != nil {
@@ -426,7 +456,7 @@ func (s *PresignService) AbortMultipartUpload(ctx context.Context, input dto.Abo
 		return fmt.Errorf("upload does not belong to specified bucket")
 	}
 
-	bucket, err := s.repo.GetBucketByID(ctx, input.BucketID)
+	bucket, err := s.repo.GetBucketByID(ctx, input.BucketID, filterID)
 	if err != nil {
 		return fmt.Errorf("bucket not found: %w", err)
 	}

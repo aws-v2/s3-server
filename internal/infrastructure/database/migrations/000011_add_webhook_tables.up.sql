@@ -1,4 +1,4 @@
-CREATE TABLE webhooks (
+CREATE TABLE IF NOT EXISTS webhooks (
     id VARCHAR(255) PRIMARY KEY,
     bucket_id VARCHAR(255) NOT NULL,
     name VARCHAR(255) NOT NULL,
@@ -11,7 +11,7 @@ CREATE TABLE webhooks (
     updated_at TIMESTAMP NOT NULL
 );
 
-CREATE TABLE webhook_deliveries (
+CREATE TABLE IF NOT EXISTS webhook_deliveries (
     id VARCHAR(255) PRIMARY KEY,
     webhook_id VARCHAR(255) NOT NULL,
     event VARCHAR(100) NOT NULL,
@@ -23,5 +23,5 @@ CREATE TABLE webhook_deliveries (
     delivered_at TIMESTAMP NOT NULL
 );
 
-CREATE INDEX idx_webhooks_bucket ON webhooks(bucket_id);
-CREATE INDEX idx_webhook_deliveries_webhook ON webhook_deliveries(webhook_id, delivered_at DESC);
+CREATE INDEX IF NOT EXISTS idx_webhooks_bucket ON webhooks(bucket_id);
+CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_webhook ON webhook_deliveries(webhook_id, delivered_at DESC);

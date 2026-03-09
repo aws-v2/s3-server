@@ -57,15 +57,21 @@ func (s *MultipartService) UploadPart(ctx context.Context, input dto.UploadPartI
 		return nil, fmt.Errorf("upload is %s", upload.Status)
 	}
 
-	bucket, err := s.repo.GetBucketByID(ctx, input.BucketID)
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	bucket, err := s.repo.GetBucketByID(ctx, input.BucketID, filterID)
 	if err != nil {
 		return nil, fmt.Errorf("bucket not found: %w", err)
 	}
 
 	// Store part with special key
 	partKey := fmt.Sprintf("%s.part.%s.%d", upload.Key, upload.UploadID, input.PartNumber)
-	
-	if err := s.storage.SaveObject(ctx, bucket.Name, partKey, input.Data, nil); err != nil {
+
+	if err := s.storage.SaveObject(ctx, bucket.StorageName, partKey, input.Data, nil); err != nil {
 		return nil, fmt.Errorf("failed to save part: %w", err)
 	}
 
@@ -100,7 +106,13 @@ func (s *MultipartService) CompleteMultipartUpload(ctx context.Context, input dt
 		return nil, fmt.Errorf("upload not found: %w", err)
 	}
 
-	bucket, err := s.repo.GetBucketByID(ctx, input.BucketID)
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	bucket, err := s.repo.GetBucketByID(ctx, input.BucketID, filterID)
 	if err != nil {
 		return nil, fmt.Errorf("bucket not found: %w", err)
 	}
@@ -130,7 +142,7 @@ func (s *MultipartService) CompleteMultipartUpload(ctx context.Context, input dt
 
 	for _, part := range upload.Parts {
 		partKey := fmt.Sprintf("%s.part.%s.%d", upload.Key, upload.UploadID, part.PartNumber)
-		data, err := s.storage.GetObject(ctx, bucket.Name, partKey)
+		data, err := s.storage.GetObject(ctx, bucket.StorageName, partKey)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get part %d: %w", part.PartNumber, err)
 		}
@@ -140,7 +152,7 @@ func (s *MultipartService) CompleteMultipartUpload(ctx context.Context, input dt
 
 	// Save final object
 	finalData := combinedData.Bytes()
-	if err := s.storage.SaveObject(ctx, bucket.Name, upload.Key, finalData, nil); err != nil {
+	if err := s.storage.SaveObject(ctx, bucket.StorageName, upload.Key, finalData, nil); err != nil {
 		return nil, fmt.Errorf("failed to save final object: %w", err)
 	}
 
@@ -162,7 +174,7 @@ func (s *MultipartService) CompleteMultipartUpload(ctx context.Context, input dt
 	// Clean up parts
 	for _, part := range upload.Parts {
 		partKey := fmt.Sprintf("%s.part.%s.%d", upload.Key, upload.UploadID, part.PartNumber)
-		s.storage.DeleteObject(ctx, bucket.Name, partKey)
+		s.storage.DeleteObject(ctx, bucket.StorageName, partKey)
 	}
 
 	// Update upload status
@@ -179,12 +191,18 @@ func (s *MultipartService) CompleteMultipartUpload(ctx context.Context, input dt
 }
 
 func (s *MultipartService) AbortMultipartUpload(ctx context.Context, bucketID, uploadID string) error {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
 	upload, err := s.repo.GetMultipartUploadByUploadID(ctx, uploadID)
 	if err != nil {
 		return fmt.Errorf("upload not found: %w", err)
 	}
 
-	bucket, err := s.repo.GetBucketByID(ctx, bucketID)
+	bucket, err := s.repo.GetBucketByID(ctx, bucketID, filterID)
 	if err != nil {
 		return fmt.Errorf("bucket not found: %w", err)
 	}
@@ -192,7 +210,7 @@ func (s *MultipartService) AbortMultipartUpload(ctx context.Context, bucketID, u
 	// Delete all uploaded parts
 	for _, part := range upload.Parts {
 		partKey := fmt.Sprintf("%s.part.%s.%d", upload.Key, upload.UploadID, part.PartNumber)
-		s.storage.DeleteObject(ctx, bucket.Name, partKey)
+		s.storage.DeleteObject(ctx, bucket.StorageName, partKey)
 	}
 
 	// Update status

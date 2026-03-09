@@ -23,6 +23,18 @@ func NewSearchService(repo domain.RepositoryPort) *SearchService {
 
 // SearchFiles searches files by name/key
 func (s *SearchService) SearchFiles(ctx context.Context, input dto.SearchFilesInput) (*dto.SearchResultOutput, error) {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	// Verify bucket ownership
+	_, err := s.repo.GetBucketByID(ctx, input.BucketID, filterID)
+	if err != nil {
+		return nil, fmt.Errorf("bucket not found or access denied: %w", err)
+	}
+
 	files, err := s.repo.SearchFilesByName(ctx, input.BucketID, input.Query, input.Limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search files: %w", err)
@@ -52,6 +64,18 @@ func (s *SearchService) SearchFiles(ctx context.Context, input dto.SearchFilesIn
 
 // SearchByMetadata searches by metadata
 func (s *SearchService) SearchByMetadata(ctx context.Context, input dto.SearchByMetadataInput) (*dto.SearchResultOutput, error) {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	// Verify bucket ownership
+	_, err := s.repo.GetBucketByID(ctx, input.BucketID, filterID)
+	if err != nil {
+		return nil, fmt.Errorf("bucket not found or access denied: %w", err)
+	}
+
 	files, err := s.repo.SearchFilesByMetadata(ctx, input.BucketID, input.Metadata, input.Limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search by metadata: %w", err)
@@ -78,6 +102,18 @@ func (s *SearchService) SearchByMetadata(ctx context.Context, input dto.SearchBy
 
 // SearchByTags searches by tags
 func (s *SearchService) SearchByTags(ctx context.Context, input dto.SearchByTagsInput) (*dto.SearchResultOutput, error) {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	// Verify bucket ownership
+	_, err := s.repo.GetBucketByID(ctx, input.BucketID, filterID)
+	if err != nil {
+		return nil, fmt.Errorf("bucket not found or access denied: %w", err)
+	}
+
 	files, err := s.repo.SearchFilesByTags(ctx, input.BucketID, input.Tags, input.Limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search by tags: %w", err)
@@ -121,6 +157,18 @@ func (s *SearchService) SearchByContent(ctx context.Context, input dto.SearchByC
 
 // AdvancedSearch performs advanced search with multiple filters
 func (s *SearchService) AdvancedSearch(ctx context.Context, input dto.AdvancedSearchInput) (*dto.SearchResultOutput, error) {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	// Verify bucket ownership
+	_, err := s.repo.GetBucketByID(ctx, input.BucketID, filterID)
+	if err != nil {
+		return nil, fmt.Errorf("bucket not found or access denied: %w", err)
+	}
+
 	files, err := s.repo.AdvancedSearchFiles(ctx, input)
 	if err != nil {
 		return nil, fmt.Errorf("failed to perform advanced search: %w", err)
@@ -151,6 +199,18 @@ func (s *SearchService) AdvancedSearch(ctx context.Context, input dto.AdvancedSe
 
 // GetSearchSuggestions gets search suggestions
 func (s *SearchService) GetSearchSuggestions(ctx context.Context, input dto.SearchSuggestionsInput) (*dto.SearchSuggestionsOutput, error) {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	// Verify bucket ownership
+	_, err := s.repo.GetBucketByID(ctx, input.BucketID, filterID)
+	if err != nil {
+		return nil, fmt.Errorf("bucket not found or access denied: %w", err)
+	}
+
 	suggestions, err := s.repo.GetSearchSuggestions(ctx, input.BucketID, input.Query, input.Limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get suggestions: %w", err)

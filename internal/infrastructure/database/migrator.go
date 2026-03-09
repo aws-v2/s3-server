@@ -39,11 +39,43 @@ func RunMigrations(db *sql.DB, dbName string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create migrator: %w", err)
 	}
- 
 
 	// Run migrations
 	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		return fmt.Errorf("2failed to run migrations: %w", err)
+		// If dirty, try to force current version and continue?
+		// Actually, it's better to let the user know, but we want to be automated.
+		return fmt.Errorf("failed to run migrations: %w", err)
+	}
+
+	return nil
+}
+
+// ForceVersion forces the migration version and clears the dirty flag
+func ForceVersion(db *sql.DB, dbName string, version int) error {
+	sourceDriver, err := iofs.New(MigrationFiles, "migrations")
+	if err != nil {
+		return fmt.Errorf("failed to create migration source: %w", err)
+	}
+
+	databaseDriver, err := postgres.WithInstance(db, &postgres.Config{
+		DatabaseName: dbName,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create database driver: %w", err)
+	}
+
+	m, err := migrate.NewWithInstance(
+		"iofs",
+		sourceDriver,
+		dbName,
+		databaseDriver,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create migrator: %w", err)
+	}
+
+	if err := m.Force(version); err != nil {
+		return fmt.Errorf("failed to force version: %w", err)
 	}
 
 	return nil

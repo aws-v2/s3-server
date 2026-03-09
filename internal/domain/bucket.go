@@ -16,6 +16,7 @@ type Bucket struct {
 	ObjectLock        bool              `json:"object_lock"`
 	CreatedAt         time.Time         `json:"created_at"`
 	UpdatedAt         time.Time         `json:"updated_at"`
+	StorageName       string            `json:"storage_name"`
 	Policy            *Policy           `json:"policy,omitempty"`
 	ARN               string            `json:"arn"`
 }

@@ -25,6 +25,18 @@ type DeleteFileInput struct {
 }
 
 func (s *DeleteService) DeleteFile(ctx context.Context, input DeleteFileInput) error {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	// Verify bucket ownership
+	_, err := s.repository.GetBucketByID(ctx, input.BucketID, filterID)
+	if err != nil {
+		return fmt.Errorf("bucket not found or access denied: %w", err)
+	}
+
 	file, err := s.repository.GetFileByID(ctx, input.FileID)
 	if err != nil {
 		return fmt.Errorf("object with id %s does not exist: %w", input.FileID, err)

@@ -26,6 +26,18 @@ func NewWebhookService(repo domain.RepositoryPort) *WebhookService {
 }
 
 func (s *WebhookService) CreateWebhook(ctx context.Context, input dto.CreateWebhookInput) (*dto.CreateWebhookOutput, error) {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	// Verify bucket ownership
+	_, err := s.repo.GetBucketByID(ctx, input.BucketID, filterID)
+	if err != nil {
+		return nil, fmt.Errorf("bucket not found or access denied: %w", err)
+	}
+
 	secret := input.Secret
 	if secret == "" {
 		secret = generateSecret()
@@ -58,6 +70,18 @@ func (s *WebhookService) CreateWebhook(ctx context.Context, input dto.CreateWebh
 }
 
 func (s *WebhookService) ListWebhooks(ctx context.Context, bucketID string) (*dto.ListWebhooksOutput, error) {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	// Verify bucket ownership
+	_, err := s.repo.GetBucketByID(ctx, bucketID, filterID)
+	if err != nil {
+		return nil, fmt.Errorf("bucket not found or access denied: %w", err)
+	}
+
 	webhooks, err := s.repo.ListWebhooksByBucket(ctx, bucketID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list webhooks: %w", err)
@@ -82,9 +106,21 @@ func (s *WebhookService) ListWebhooks(ctx context.Context, bucketID string) (*dt
 }
 
 func (s *WebhookService) GetWebhook(ctx context.Context, webhookID string) (*dto.GetWebhookOutput, error) {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
 	webhook, err := s.repo.GetWebhookByID(ctx, webhookID)
 	if err != nil {
 		return nil, fmt.Errorf("webhook not found: %w", err)
+	}
+
+	// Verify bucket ownership
+	_, err = s.repo.GetBucketByID(ctx, webhook.BucketID, filterID)
+	if err != nil {
+		return nil, fmt.Errorf("access denied to webhook: %w", err)
 	}
 
 	return &dto.GetWebhookOutput{
@@ -101,9 +137,21 @@ func (s *WebhookService) GetWebhook(ctx context.Context, webhookID string) (*dto
 }
 
 func (s *WebhookService) UpdateWebhook(ctx context.Context, webhookID string, input dto.UpdateWebhookInput) error {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
 	webhook, err := s.repo.GetWebhookByID(ctx, webhookID)
 	if err != nil {
 		return fmt.Errorf("webhook not found: %w", err)
+	}
+
+	// Verify bucket ownership
+	_, err = s.repo.GetBucketByID(ctx, webhook.BucketID, filterID)
+	if err != nil {
+		return fmt.Errorf("access denied to update webhook: %w", err)
 	}
 
 	if input.Name != nil {
@@ -132,6 +180,23 @@ func (s *WebhookService) UpdateWebhook(ctx context.Context, webhookID string, in
 }
 
 func (s *WebhookService) DeleteWebhook(ctx context.Context, webhookID string) error {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	webhook, err := s.repo.GetWebhookByID(ctx, webhookID)
+	if err != nil {
+		return fmt.Errorf("webhook not found: %w", err)
+	}
+
+	// Verify bucket ownership
+	_, err = s.repo.GetBucketByID(ctx, webhook.BucketID, filterID)
+	if err != nil {
+		return fmt.Errorf("access denied to delete webhook: %w", err)
+	}
+
 	if err := s.repo.DeleteWebhook(ctx, webhookID); err != nil {
 		return fmt.Errorf("failed to delete webhook: %w", err)
 	}
@@ -139,13 +204,25 @@ func (s *WebhookService) DeleteWebhook(ctx context.Context, webhookID string) er
 }
 
 func (s *WebhookService) TestWebhook(ctx context.Context, webhookID string) (*dto.TestWebhookOutput, error) {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
 	webhook, err := s.repo.GetWebhookByID(ctx, webhookID)
 	if err != nil {
 		return nil, fmt.Errorf("webhook not found: %w", err)
 	}
 
+	// Verify bucket ownership
+	_, err = s.repo.GetBucketByID(ctx, webhook.BucketID, filterID)
+	if err != nil {
+		return nil, fmt.Errorf("access denied to test webhook: %w", err)
+	}
+
 	testPayload := map[string]interface{}{
-		"event": "webhook.test",
+		"event":     "webhook.test",
 		"timestamp": time.Now().Unix(),
 		"data": map[string]string{
 			"message": "This is a test webhook delivery",
@@ -170,6 +247,23 @@ func (s *WebhookService) TestWebhook(ctx context.Context, webhookID string) (*dt
 }
 
 func (s *WebhookService) GetWebhookDeliveries(ctx context.Context, webhookID string) (*dto.WebhookDeliveriesOutput, error) {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	webhook, err := s.repo.GetWebhookByID(ctx, webhookID)
+	if err != nil {
+		return nil, fmt.Errorf("webhook not found: %w", err)
+	}
+
+	// Verify bucket ownership
+	_, err = s.repo.GetBucketByID(ctx, webhook.BucketID, filterID)
+	if err != nil {
+		return nil, fmt.Errorf("access denied to view deliveries: %w", err)
+	}
+
 	deliveries, err := s.repo.ListWebhookDeliveries(ctx, webhookID, 50)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get deliveries: %w", err)

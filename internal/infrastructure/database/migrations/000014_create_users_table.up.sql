@@ -16,7 +16,7 @@ CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_is_active ON users(is_active);
 
 -- Add foreign key constraint to buckets table (owner_id references users.id)
--- Note: Only add if buckets.owner_id column exists
+ALTER TABLE buckets DROP CONSTRAINT IF EXISTS fk_buckets_owner;
 ALTER TABLE buckets
 ADD CONSTRAINT fk_buckets_owner
 FOREIGN KEY (owner_id) REFERENCES users(id)
