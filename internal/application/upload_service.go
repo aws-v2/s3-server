@@ -67,6 +67,22 @@ type UploadFileOutput struct {
 	CreatedAt time.Time
 }
 
+func (s *UploadService) resolveBucket(ctx context.Context, idOrName string, filterID string) (domain.Bucket, error) {
+	// Try by ID first
+	bucket, err := s.repository.GetBucketByID(ctx, idOrName, filterID)
+	if err == nil {
+		return bucket, nil
+	}
+
+	// Try by Name as fallback
+	bucket, err = s.repository.GetBucketByName(ctx, idOrName, filterID)
+	if err == nil {
+		return bucket, nil
+	}
+
+	return domain.Bucket{}, fmt.Errorf("bucket not found: %s", idOrName)
+}
+
 func (s *UploadService) UploadFile(ctx context.Context, input UploadFileInput) (*UploadFileOutput, error) {
 	actor, _ := ctx.Value("actor").(domain.Actor)
 	filterID := actor.ID
@@ -74,10 +90,10 @@ func (s *UploadService) UploadFile(ctx context.Context, input UploadFileInput) (
 		filterID = ""
 	}
 
-	// Get bucket by name
-	bucket, err := s.repository.GetBucketByName(ctx, input.BucketID, filterID)
+	// Resolve bucket by ID or Name
+	bucket, err := s.resolveBucket(ctx, input.BucketID, filterID)
 	if err != nil {
-		return nil, fmt.Errorf("bucket not found: %w", err)
+		return nil, err
 	}
 
 	var fileIDs []string
@@ -140,9 +156,9 @@ func (s *UploadService) CreateFolder(ctx context.Context, bucketID, folderName s
 		filterID = ""
 	}
 
-	bucket, err := s.repository.GetBucketByID(ctx, bucketID, filterID)
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
 	if err != nil {
-		return fmt.Errorf("bucket not found: %w", err)
+		return err
 	}
 
 	// Folder name must end with /
@@ -186,10 +202,10 @@ func (s *UploadService) GetFileInfo(ctx context.Context, bucketID, fileID string
 		filterID = ""
 	}
 
-	// Get bucket by ID
-	bucket, err := s.repository.GetBucketByID(ctx, bucketID, filterID)
+	// Resolve bucket by ID or Name
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
 	if err != nil {
-		return nil, fmt.Errorf("bucket not found: %w", err)
+		return nil, err
 	}
 
 	// Get file from DB (try ID first, then Key)
@@ -226,10 +242,10 @@ func (s *UploadService) ListFiles(ctx context.Context, bucketName string) ([]dto
 		filterID = ""
 	}
 
-	// Get bucket by name
-	bucket, err := s.repository.GetBucketByName(ctx, bucketName, filterID)
+	// Resolve bucket by ID or Name
+	bucket, err := s.resolveBucket(ctx, bucketName, filterID)
 	if err != nil {
-		return nil, fmt.Errorf("bucket not found: %w", err)
+		return nil, err
 	}
 
 	// Get files from DB using bucket ID
@@ -262,9 +278,9 @@ func (s *UploadService) DownloadFile(ctx context.Context, bucketId, fileID strin
 		filterID = ""
 	}
 
-	bucket, err := s.repository.GetBucketByID(ctx, bucketId, filterID)
+	bucket, err := s.resolveBucket(ctx, bucketId, filterID)
 	if err != nil {
-		return nil, nil, fmt.Errorf("bucket not found: %w", err)
+		return nil, nil, err
 	}
 
 	// Get file metadata
@@ -303,9 +319,9 @@ func (s *UploadService) UpdateFileMetadata(ctx context.Context, bucketID, fileID
 		filterID = ""
 	}
 
-	bucket, err := s.repository.GetBucketByID(ctx, bucketID, filterID)
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
 	if err != nil {
-		return nil, fmt.Errorf("bucket not found: %w", err)
+		return nil, err
 	}
 
 	file, err := s.repository.GetFileByID(ctx, fileID)
@@ -341,15 +357,14 @@ func (s *UploadService) CopyFile(ctx context.Context, sourceBucketID, fileID str
 		filterID = ""
 	}
 
-	sourceBucket, err := s.repository.GetBucketByID(ctx, sourceBucketID, filterID)
+	sourceBucket, err := s.resolveBucket(ctx, sourceBucketID, filterID)
 	if err != nil {
-		return nil, fmt.Errorf("source bucket not found: %w", err)
+		return nil, err
 	}
 
-	destBucket, err := s.repository.GetBucketByName(ctx, input.DestinationBucket, filterID)
+	destBucket, err := s.resolveBucket(ctx, input.DestinationBucket, filterID)
 	if err != nil {
-
-		return nil, fmt.Errorf("destination bucket not found: %w", err)
+		return nil, err
 	}
 
 	file, err := s.repository.GetFileByID(ctx, fileID)
@@ -404,14 +419,14 @@ func (s *UploadService) MoveFile(ctx context.Context, sourceBucketName, fileID s
 		filterID = ""
 	}
 
-	sourceBucket, err := s.repository.GetBucketByID(ctx, sourceBucketName, filterID)
+	sourceBucket, err := s.resolveBucket(ctx, sourceBucketName, filterID)
 	if err != nil {
-		return nil, fmt.Errorf("source bucket not found: %w", err)
+		return nil, err
 	}
 
-	destBucket, err := s.repository.GetBucketByName(ctx, input.DestinationBucket, filterID)
+	destBucket, err := s.resolveBucket(ctx, input.DestinationBucket, filterID)
 	if err != nil {
-		return nil, fmt.Errorf("destination bucket not found: %w", err)
+		return nil, err
 	}
 
 	file, err := s.repository.GetFileByID(ctx, fileID)

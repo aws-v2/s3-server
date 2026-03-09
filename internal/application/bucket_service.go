@@ -114,6 +114,22 @@ func (s *BucketService) CreateBucket(ctx context.Context, input dto.CreateBucket
 	}, nil
 }
 
+func (s *BucketService) resolveBucket(ctx context.Context, idOrName string, filterID string) (domain.Bucket, error) {
+	// Try by ID first
+	bucket, err := s.repo.GetBucketByID(ctx, idOrName, filterID)
+	if err == nil {
+		return bucket, nil
+	}
+
+	// Try by Name as fallback
+	bucket, err = s.repo.GetBucketByName(ctx, idOrName, filterID)
+	if err == nil {
+		return bucket, nil
+	}
+
+	return domain.Bucket{}, fmt.Errorf("bucket not found: %s", idOrName)
+}
+
 func (s *BucketService) GetBucket(ctx context.Context, bucketID string) (*dto.GetBucketOutput, error) {
 	actor, _ := ctx.Value("actor").(domain.Actor)
 	filterID := actor.ID
@@ -121,14 +137,15 @@ func (s *BucketService) GetBucket(ctx context.Context, bucketID string) (*dto.Ge
 		filterID = ""
 	}
 
-	bucket, err := s.repo.GetBucketByID(ctx, bucketID, filterID)
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
 	if err != nil {
-		return nil, fmt.Errorf("bucket not found: %w", err)
+		return nil, err
 	}
 
 	return &dto.GetBucketOutput{
 		BucketID:   bucket.ID,
 		Name:       bucket.Name,
+		ARN:        bucket.ARN,
 		CreatedAt:  bucket.CreatedAt,
 		BucketType: bucket.BucketType,
 		Region:     bucket.Region,
@@ -151,10 +168,9 @@ func (s *BucketService) UpdateBucket(ctx context.Context, bucketID string, input
 	if IsAdmin(actor.ID) {
 		filterID = ""
 	}
-
-	bucket, err := s.repo.GetBucketByID(ctx, bucketID, filterID)
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
 	if err != nil {
-		return nil, fmt.Errorf("bucket not found: %w", err)
+		return nil, err
 	}
 
 	if input.Name != "" {
@@ -193,10 +209,9 @@ func (s *BucketService) DeleteBucket(ctx context.Context, bucketID string) error
 	if len(files) > 0 {
 		return fmt.Errorf("cannot delete bucket with files")
 	}
-	bucket, err := s.repo.GetBucketByName(ctx, bucketID, filterID)
-
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
 	if err != nil {
-		return fmt.Errorf("bucket not found: %w", err)
+		return err
 	}
 
 	if err := s.storage.DeleteBucket(ctx, bucket.StorageName); err != nil {
@@ -217,9 +232,9 @@ func (s *BucketService) EmptyBucket(ctx context.Context, bucketID string) error 
 		filterID = ""
 	}
 
-	bucket, err := s.repo.GetBucketByID(ctx, bucketID, filterID)
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
 	if err != nil {
-		return fmt.Errorf("bucket not found: %w", err)
+		return err
 	}
 
 	// 1. Delete all objects from storage
@@ -242,9 +257,9 @@ func (s *BucketService) GetBucketStats(ctx context.Context, bucketID string) (*d
 		filterID = ""
 	}
 
-	bucket, err := s.repo.GetBucketByID(ctx, bucketID, filterID)
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
 	if err != nil {
-		return nil, fmt.Errorf("bucket not found or access denied: %w", err)
+		return nil, err
 	}
 
 	files, err := s.repo.ListFiles(ctx, bucket.ID)
@@ -271,9 +286,9 @@ func (s *BucketService) GetBucketPolicy(ctx context.Context, bucketID string) (*
 		filterID = ""
 	}
 
-	bucket, err := s.repo.GetBucketByID(ctx, bucketID, filterID)
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
 	if err != nil {
-		return nil, fmt.Errorf("bucket not found: %w", err)
+		return nil, err
 	}
 
 	policyStr := ""
@@ -295,9 +310,9 @@ func (s *BucketService) UpdateBucketPolicy(ctx context.Context, bucketID string,
 		filterID = ""
 	}
 
-	bucket, err := s.repo.GetBucketByID(ctx, bucketID, filterID)
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
 	if err != nil {
-		return fmt.Errorf("bucket not found: %w", err)
+		return err
 	}
 
 	// Permission: only owner or admin can update
@@ -353,9 +368,9 @@ func (s *BucketService) SetBucketVersioning(ctx context.Context, bucketID string
 		filterID = ""
 	}
 
-	bucket, err := s.repo.GetBucketByID(ctx, bucketID, filterID)
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
 	if err != nil {
-		return fmt.Errorf("bucket not found: %w", err)
+		return err
 	}
 
 	// Set versioning in storage layer (MinIO)
@@ -405,7 +420,7 @@ func (s *BucketService) GetBucketVersioning(ctx context.Context, bucketID string
 	}
 
 	// Verify bucket ownership first
-	_, err := s.repo.GetBucketByID(ctx, bucketID, filterID)
+	_, err := s.resolveBucket(ctx, bucketID, filterID)
 	if err != nil {
 		return nil, err
 	}
@@ -429,7 +444,7 @@ func (s *BucketService) SetBucketLifecycle(ctx context.Context, bucketID string,
 	}
 
 	// Verify bucket ownership first
-	_, err := s.repo.GetBucketByID(ctx, bucketID, filterID)
+	_, err := s.resolveBucket(ctx, bucketID, filterID)
 	if err != nil {
 		return err
 	}
@@ -459,7 +474,19 @@ func (s *BucketService) SetBucketLifecycle(ctx context.Context, bucketID string,
 }
 
 func (s *BucketService) GetBucketLifecycle(ctx context.Context, bucketID string) ([]domain.LifecycleRule, error) {
-	rules, err := s.repo.GetLifecycleRules(ctx, bucketID)
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	// Verify bucket ownership and resolve name
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
+	if err != nil {
+		return nil, err
+	}
+
+	rules, err := s.repo.GetLifecycleRules(ctx, bucket.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get lifecycle rules: %w", err)
 	}
