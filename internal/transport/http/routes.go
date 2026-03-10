@@ -19,6 +19,7 @@ type Handlers struct {
 	Webhook      *WebhookHandler
 	Multipart    *MultipartHandler
 	Analytics    *AnalyticsHandler
+	AccessPoint  *AccessPointHandler
 	Validator    middleware.APIKeyValidator
 	JWTValidator domain.JWTValidator
 }
@@ -37,7 +38,7 @@ func RegisterRoutes(router *gin.Engine, handlers *Handlers) {
 
 	// Register domain-specific routes
 	registerObjectRoutes(v1, handlers.File, handlers.Validator)
-	registerBucketRoutes(v1, handlers.Bucket, handlers.Validator)
+	registerBucketRoutes(v1, handlers, handlers.Validator)
 	registerHealthRoutes(v1, handlers.Health)
 	registerWebhookRoutes(v1, handlers.Webhook)
 	registerMultipartRoutes(v1, handlers.Multipart)
@@ -100,8 +101,10 @@ func registerObjectRoutes(v1 *gin.RouterGroup, handler *HandlerForFiles, validat
 }
 
 // registerBucketRoutes registers all bucket management routes
-func registerBucketRoutes(v1 *gin.RouterGroup, handler *BucketHandler, validator middleware.APIKeyValidator) {
+func registerBucketRoutes(v1 *gin.RouterGroup, handlers *Handlers, validator middleware.APIKeyValidator) {
 	buckets := v1.Group("/buckets")
+	handler := handlers.Bucket
+	buckets.Use(middleware.LocalBypassMiddleware())
 	buckets.Use(middleware.ExtractUserIDMiddleware())
 
 	// buckets.Use(middleware.APIKeyAuthMiddleware(validator))------------>>IAM
@@ -124,11 +127,22 @@ func registerBucketRoutes(v1 *gin.RouterGroup, handler *BucketHandler, validator
 		buckets.PUT("/:bucketId/policy", handler.UpdateBucketPolicy)
 		// // Enable/disable bucket versioning
 		buckets.PUT("/:bucketId/versioning", handler.SetBucketVersioning)
-
 		buckets.GET("/:bucketId/versioning", handler.GetBucketVersioning)
+		// CORS (No Auth for local testing)
+		buckets.GET("/:bucketId/cors", handler.GetBucketCORS)
+		buckets.PUT("/:bucketId/cors", handler.UpdateBucketCORS)
+
+		// Block Public Access
+		buckets.PUT("/:bucketId/block-public-access", handler.SetBucketBlockPublicAccess)
+
 		// // Set bucket lifecycle rules
 		buckets.PUT("/:bucketId/lifecycle", handler.SetBucketLifecycle)
 		buckets.GET("/:bucketId/lifecycle", handler.GetBucketLifecycle)
+
+		// Access Points
+		buckets.POST("/:bucketId/access-points", handlers.AccessPoint.CreateAccessPoint)
+		buckets.GET("/:bucketId/access-points", handlers.AccessPoint.ListAccessPoints)
+		buckets.PUT("/:bucketId/access-points/:accessPointName", handlers.AccessPoint.UpdateAccessPointOrigin)
 
 		// Empty bucket
 		buckets.POST("/:bucketId/empty", handler.EmptyBucket)

@@ -204,7 +204,15 @@ func (h *BucketHandler) UpdateBucketPolicy(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
 		return
 	}
-	actor := actorI.(string)
+	var actor string
+	if a, ok := actorI.(domain.Actor); ok {
+		actor = a.ID
+	} else if aStr, ok := actorI.(string); ok {
+		actor = aStr
+	} else {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid actor type"})
+		return
+	}
 
 	bucketID := c.Param("bucketId")
 	var input dto.UpdatePolicyInput
@@ -305,4 +313,62 @@ func (h *BucketHandler) GetBucketLifecycle(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"rules": rules})
+}
+
+func (h *BucketHandler) SetBucketBlockPublicAccess(c *gin.Context) {
+	bucketID := c.Param("bucketId")
+
+	var input dto.SetBlockPublicAccessInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON payload"})
+		return
+	}
+
+	if err := h.bucketService.SetBucketBlockPublicAccess(c.Request.Context(), bucketID, input); err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "block public access updated"})
+}
+
+func (h *BucketHandler) GetBucketCORS(c *gin.Context) {
+	bucketID := c.Param("bucketId")
+
+	output, err := h.bucketService.GetBucketCORS(c.Request.Context(), bucketID)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, output)
+}
+
+func (h *BucketHandler) UpdateBucketCORS(c *gin.Context) {
+	bucketID := c.Param("bucketId")
+
+	var input dto.CORSConfiguration
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON payload: " + err.Error()})
+		return
+	}
+
+	if err := h.bucketService.SetBucketCORS(c.Request.Context(), bucketID, input); err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "cors configuration updated"})
 }

@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"net/http"
 	"s3/internal/domain"
 	"strings"
@@ -35,10 +36,6 @@ type JWTValidator = domain.JWTValidator
 // 	}
 // }
 
-
-
-
-
 func APIKeyAuthMiddleware(validator APIKeyValidator) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		apiKey := c.GetHeader("x-api-key")
@@ -63,8 +60,22 @@ func APIKeyAuthMiddleware(validator APIKeyValidator) gin.HandlerFunc {
 	}
 }
 
-
-
+func LocalBypassMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		actorID := c.GetHeader("x-actor-id")
+		if actorID != "" {
+			actor := domain.Actor{
+				ID:   actorID,
+				Type: domain.ActorUser,
+				Auth: "local_bypass",
+			}
+			c.Set("actor", actor)
+			ctx := context.WithValue(c.Request.Context(), "actor", actor)
+			c.Request = c.Request.WithContext(ctx)
+		}
+		c.Next()
+	}
+}
 
 func BearerAuthMiddleware(jwtValidator JWTValidator) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -96,7 +107,6 @@ func BearerAuthMiddleware(jwtValidator JWTValidator) gin.HandlerFunc {
 		c.Next()
 	}
 }
-
 
 func RequireAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {

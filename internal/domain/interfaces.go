@@ -2,7 +2,6 @@ package domain
 
 import (
 	"context"
-	"s3/internal/infrastructure/dto"
 	"time"
 )
 
@@ -27,7 +26,7 @@ type StoragePort interface {
 		dstBucket string,
 		dstKey string,
 	) error
-	GetBucketVersioning(ctx context.Context, bucketId string) (*dto.VersioningOutput, error)
+	GetBucketVersioning(ctx context.Context, bucketId string) (*VersioningOutput, error)
 	EmptyBucket(ctx context.Context, bucketName string) error
 }
 
@@ -75,7 +74,7 @@ type RepositoryPort interface {
 	SearchFilesByName(ctx context.Context, bucketID, query string, limit int) ([]File, error)
 	SearchFilesByMetadata(ctx context.Context, bucketID string, metadata map[string]string, limit int) ([]File, error)
 	SearchFilesByTags(ctx context.Context, bucketID string, tags []string, limit int) ([]File, error)
-	AdvancedSearchFiles(ctx context.Context, input dto.AdvancedSearchInput) ([]File, error)
+	AdvancedSearchFiles(ctx context.Context, input AdvancedSearchInput) ([]File, error)
 	GetSearchSuggestions(ctx context.Context, bucketID, query string, limit int) ([]string, error)
 
 	// Search History
@@ -109,9 +108,9 @@ type RepositoryPort interface {
 	DeleteMultipartUpload(ctx context.Context, uploadID string) error
 
 	// Multipart Parts
-	SaveMultipartPart(ctx context.Context, part *dto.MultipartPart) error
-	GetMultipartPart(ctx context.Context, uploadID string, partNumber int) (*dto.MultipartPart, error)
-	ListMultipartParts(ctx context.Context, uploadID string) ([]*dto.MultipartPart, error)
+	SaveMultipartPart(ctx context.Context, part *MultipartPart) error
+	GetMultipartPart(ctx context.Context, uploadID string, partNumber int) (*MultipartPart, error)
+	ListMultipartParts(ctx context.Context, uploadID string) ([]*MultipartPart, error)
 	DeleteMultipartParts(ctx context.Context, uploadID string) error
 
 	// 🔐 Policy-related operations
@@ -124,6 +123,17 @@ type RepositoryPort interface {
 	GetLifecycleRules(ctx context.Context, bucketID string) ([]LifecycleRule, error)
 	UpsertLifecycleRule(ctx context.Context, bucketID string, ruleJSON []byte) error
 	DeleteFilesByBucket(ctx context.Context, bucketID string) error
+
+	// 🌐 Access Points
+	SaveAccessPoint(ctx context.Context, ap *AccessPoint) error
+	GetAccessPointByName(ctx context.Context, bucketID, name string) (*AccessPoint, error)
+	ListAccessPoints(ctx context.Context, bucketID string) ([]AccessPoint, error)
+	UpdateAccessPoint(ctx context.Context, ap *AccessPoint) error
+	SetBucketBlockPublicAccess(ctx context.Context, bucketID string, config BlockPublicAccess) error
+
+	// CORS
+	GetBucketCORS(ctx context.Context, bucketID string) (*CORSConfiguration, error)
+	SetBucketCORS(ctx context.Context, bucketID string, cors *CORSConfiguration) error
 }
 
 type Logger interface {
@@ -143,4 +153,8 @@ type EventPublisher interface {
 
 type TokenProvider interface {
 	RequestInstanceToken(ctx context.Context, userID, instanceID string) (string, error)
+}
+
+type NetworkPort interface {
+	ListVPCs(ctx context.Context, tenantID string) ([]VPC, error)
 }

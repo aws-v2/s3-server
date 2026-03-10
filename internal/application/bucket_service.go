@@ -362,9 +362,8 @@ func (s *BucketService) UpdateBucketPolicy(ctx context.Context, bucketID string,
 	if err != nil {
 		return err
 	}
-
 	// Permission: only owner or admin can update
-	if actorID != fmt.Sprintf("user:%s", bucket.OwnerID) && !IsAdmin(actorID) {
+	if actorID != bucket.OwnerID && !IsAdmin(actorID) {
 		return errors.New("forbidden: only bucket owner or admin can update policy")
 	}
 
@@ -554,4 +553,120 @@ func (s *BucketService) GetBucketLifecycle(ctx context.Context, bucketID string)
 	}
 
 	return rules, nil
+}
+
+func (s *BucketService) SetBucketBlockPublicAccess(ctx context.Context, bucketID string, input dto.SetBlockPublicAccessInput) error {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
+	if err != nil {
+		return err
+	}
+
+	config := domain.BlockPublicAccess{
+		BlockPublicAcls:       input.BlockPublicAcls,
+		IgnorePublicAcls:      input.IgnorePublicAcls,
+		BlockPublicPolicy:     input.BlockPublicPolicy,
+		RestrictPublicBuckets: input.RestrictPublicBuckets,
+	}
+
+	if input.BlockAll != nil {
+		val := *input.BlockAll
+		config.BlockPublicAcls = val
+		config.IgnorePublicAcls = val
+		config.BlockPublicPolicy = val
+		config.RestrictPublicBuckets = val
+	}
+
+	if err := s.repo.SetBucketBlockPublicAccess(ctx, bucket.ID, config); err != nil {
+		return fmt.Errorf("failed to update block public access: %w", err)
+	}
+
+	// Emit metrics (Tier 1)
+	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
+		PutRequests: 1,
+	})
+
+	return nil
+}
+
+func (s *BucketService) GetBucketCORS(ctx context.Context, bucketID string) (*dto.CORSConfiguration, error) {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	// Verify bucket ownership
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
+	if err != nil {
+		return nil, err
+	}
+
+	cors, err := s.repo.GetBucketCORS(ctx, bucket.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cors configuration: %w", err)
+	}
+
+	if cors == nil {
+		return &dto.CORSConfiguration{CORSRules: []dto.CORSRule{}}, nil
+	}
+
+	output := dto.CORSConfiguration{
+		CORSRules: make([]dto.CORSRule, 0, len(cors.CORSRules)),
+	}
+	for _, r := range cors.CORSRules {
+		output.CORSRules = append(output.CORSRules, dto.CORSRule{
+			AllowedHeaders: r.AllowedHeaders,
+			AllowedMethods: r.AllowedMethods,
+			AllowedOrigins: r.AllowedOrigins,
+			ExposeHeaders:  r.ExposeHeaders,
+			MaxAgeSeconds:  r.MaxAgeSeconds,
+			Test:           r.Test,
+		})
+	}
+
+	return &output, nil
+}
+
+func (s *BucketService) SetBucketCORS(ctx context.Context, bucketID string, input dto.CORSConfiguration) error {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
+	if err != nil {
+		return err
+	}
+
+	cors := &domain.CORSConfiguration{
+		CORSRules: make([]domain.CORSRule, 0, len(input.CORSRules)),
+	}
+	for _, r := range input.CORSRules {
+		cors.CORSRules = append(cors.CORSRules, domain.CORSRule{
+			AllowedHeaders: r.AllowedHeaders,
+			AllowedMethods: r.AllowedMethods,
+			AllowedOrigins: r.AllowedOrigins,
+			ExposeHeaders:  r.ExposeHeaders,
+			MaxAgeSeconds:  r.MaxAgeSeconds,
+			Test:           r.Test,
+		})
+	}
+
+	if err := s.repo.SetBucketCORS(ctx, bucket.ID, cors); err != nil {
+		return fmt.Errorf("failed to save cors configuration: %w", err)
+	}
+
+	// Emit metrics (Tier 1)
+	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
+		PutRequests: 1,
+	})
+
+	return nil
 }

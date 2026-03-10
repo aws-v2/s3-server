@@ -58,9 +58,7 @@ func (c *MetricsClient) SendS3Metrics(ctx context.Context, req dto.S3IngestReque
 		return fmt.Errorf("failed to marshal metrics: %w", err)
 	}
 
-
-	fmt.Println("jsonData", string(jsonData))
-	fmt.Println("9999999999999999999999999999999999999url", url)
+ 
 
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {

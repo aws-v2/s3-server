@@ -1,21 +1,16 @@
 package dto
 
-import "time"
+import (
+	"s3/internal/domain"
+	"time"
+)
 
-// type CompleteMultipartUploadInput struct {
-// 	BucketID string          `json:"-"`
-// 	UploadID string          `json:"-"`
-// 	Parts    []CompletedPart `json:"parts" binding:"required"`
-// }
-type MultipartPart struct {
-	ID           string    `json:"id" db:"id"`
-	UploadID     string    `json:"upload_id" db:"upload_id"`
-	PartNumber   int       `json:"part_number" db:"part_number"`
-	ETag         string    `json:"etag" db:"etag"`
-	Size         int64     `json:"size" db:"size"`
-	UploadedAt   time.Time `json:"uploaded_at" db:"uploaded_at"`
-	CreatedAt    time.Time `json:"created_at" db:"created_at"`
-} 
+//	type CompleteMultipartUploadInput struct {
+//		BucketID string          `json:"-"`
+//		UploadID string          `json:"-"`
+//		Parts    []CompletedPart `json:"parts" binding:"required"`
+//	}
+type MultipartPart = domain.MultipartPart
 type CompletedPart struct {
 	PartNumber int    `json:"part_number" binding:"required"`
 	ETag       string `json:"etag" binding:"required"`

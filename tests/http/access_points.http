@@ -1,0 +1,55 @@
+### S3 Access Points Tests
+
+@baseUrl = http://localhost:8080/api/v1/s3
+@bucketId = test-bucket
+
+### 1. Create a Bucket (Pre-requisite)
+POST {{baseUrl}}/buckets/create-bucket
+Content-Type: application/json
+
+{
+    "name": "{{bucketId}}",
+    "region": "us-east-1"
+}
+
+### 2. Create Access Point (POST)
+POST {{baseUrl}}/buckets/{{bucketId}}/access-points
+Content-Type: application/json
+
+{
+    "name": "my-access-point",
+    "networkOrigin": "internet"
+}
+
+### 3. List Access Points (GET)
+GET {{baseUrl}}/buckets/{{bucketId}}/access-points
+
+### 4. Update Access Point Origin (PUT)
+PUT {{baseUrl}}/buckets/{{bucketId}}/access-points/my-access-point
+Content-Type: application/json
+
+{
+    "networkOrigin": "vpc"
+}
+
+### 5. Verify Update (GET)
+GET {{baseUrl}}/buckets/{{bucketId}}/access-points
+
+### 6. Set Block Public Access (PUT)
+PUT {{baseUrl}}/buckets/{{bucketId}}/block-public-access
+Content-Type: application/json
+
+{
+    "blockAll": false
+}
+
+### 7. Set Specific Block Public Access (PUT)
+PUT {{baseUrl}}/buckets/{{bucketId}}/block-public-access
+Content-Type: application/json
+
+{
+    "blockPublicAcls": true,
+    "ignorePublicAcls": true,
+    "blockPublicPolicy": false,
+    "restrictPublicBuckets": false
+}

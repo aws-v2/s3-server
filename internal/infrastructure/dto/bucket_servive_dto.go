@@ -1,6 +1,9 @@
 package dto
 
-import "time"
+import (
+	"s3/internal/domain"
+	"time"
+)
 
 // CreateBucketOutput defines data returned after creating a bucket.
 type CreateBucketOutput struct {
@@ -52,10 +55,8 @@ type UpdatePolicyInput struct {
 type VersioningInput struct {
 	Enabled bool `json:"enabled"`
 }
-type VersioningOutput struct {
-	Enabled bool   `json:"enabled"`
-	Status  string `json:"status"` // "Enabled", "Suspended", or ""
-}
+
+type VersioningOutput = domain.VersioningOutput
 type LifecycleInput struct {
 	Rules []LifecycleRule `json:"rules"`
 }
@@ -112,4 +113,25 @@ type PolicyStatement struct {
 	Principal []string `json:"Principal" binding:"required"`
 	Action    []string `json:"Action" binding:"required"`
 	Resource  []string `json:"Resource" binding:"required"`
+}
+
+type SetBlockPublicAccessInput struct {
+	BlockAll              *bool `json:"blockAll,omitempty"`
+	BlockPublicAcls       bool  `json:"blockPublicAcls"`
+	IgnorePublicAcls      bool  `json:"ignorePublicAcls"`
+	BlockPublicPolicy     bool  `json:"blockPublicPolicy"`
+	RestrictPublicBuckets bool  `json:"restrictPublicBuckets"`
+}
+
+type CORSRule struct {
+	AllowedHeaders []string `json:"allowedHeaders,omitempty"`
+	AllowedMethods []string `json:"allowedMethods,omitempty"`
+	AllowedOrigins []string `json:"allowedOrigins,omitempty"`
+	ExposeHeaders  []string `json:"exposeHeaders,omitempty"`
+	MaxAgeSeconds  int      `json:"maxAgeSeconds,omitempty"`
+	Test           string   `json:"test,omitempty"`
+}
+
+type CORSConfiguration struct {
+	CORSRules []CORSRule `json:"corsRules"`
 }

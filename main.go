@@ -275,20 +275,22 @@ func main() {
 	webhookService := application.NewWebhookService(postgresRepo)
 	analyticsService := application.NewAnalyticsService(postgresRepo)
 	multipartService := application.NewMultipartService(postgresRepo, minioAdapter, metricsClient)
+	accessPointService := application.NewAccessPointService(postgresRepo, natsAdapter)
 
 	// 3. Initialize Transport Layer (HTTP)
 	log.Println("Initializing HTTP handlers...")
 	handlers := &http.Handlers{
-		File:      http.NewFileHandler(uploadService, deleteService),
-		Bucket:    http.NewBucketHandler(bucketService),
-		Health:    http.NewHealthHandler(healthService),
-		Presign:   http.NewPresignHandler(presignedService),   // TODO: implement later
-		Batch:     http.NewBatchHandler(batchService),         // TODO: implement later
-		Prefix:    http.NewPrefixHandler(prefixService),       // TODO: implement later
-		Search:    http.NewSearchHandler(SearchService),       // TODO: implement later
-		Webhook:   http.NewWebhookHandler(webhookService),     // TODO: implement later
-		Analytics: http.NewAnalyticsHandler(analyticsService), // TODO: implement later
-		Multipart: http.NewMultipartHandler(multipartService), // TODO: implement later
+		File:        http.NewFileHandler(uploadService, deleteService),
+		Bucket:      http.NewBucketHandler(bucketService),
+		Health:      http.NewHealthHandler(healthService),
+		Presign:     http.NewPresignHandler(presignedService),   // TODO: implement later
+		Batch:       http.NewBatchHandler(batchService),         // TODO: implement later
+		Prefix:      http.NewPrefixHandler(prefixService),       // TODO: implement later
+		Search:      http.NewSearchHandler(SearchService),       // TODO: implement later
+		Webhook:     http.NewWebhookHandler(webhookService),     // TODO: implement later
+		Analytics:   http.NewAnalyticsHandler(analyticsService), // TODO: implement later
+		Multipart:   http.NewMultipartHandler(multipartService), // TODO: implement later
+		AccessPoint: http.NewAccessPointHandler(accessPointService),
 		// Auth:         http.NewAuthHandler(authService),           // JWT authentication handler
 		Validator:    iamValidator, // IAM/API Key validator
 		JWTValidator: nil,          // JWT validator removed

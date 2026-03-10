@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS buckets (
     policy JSONB,
     policy_version INTEGER DEFAULT 0,
     versioning_status VARCHAR(50) DEFAULT 'Disabled',
+    cors JSONB DEFAULT '{"corsRules": []}',
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
@@ -192,6 +193,20 @@ CREATE TABLE IF NOT EXISTS bucket_lifecycle_rules (
 );
 
 CREATE INDEX idx_lifecycle_rules_bucket ON bucket_lifecycle_rules(bucket_id);
+
+-- Access Points table
+CREATE TABLE IF NOT EXISTS access_points (
+    id VARCHAR(255) PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    bucket_id VARCHAR(255) NOT NULL REFERENCES buckets(id) ON DELETE CASCADE,
+    network_origin VARCHAR(50) NOT NULL DEFAULT 'internet',
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    UNIQUE(bucket_id, name)
+);
+
+CREATE INDEX idx_access_points_bucket ON access_points(bucket_id);
+CREATE INDEX idx_access_points_name ON access_points(name);
 
 -- Add some helpful comments
 COMMENT ON TABLE buckets IS 'Storage buckets/containers';

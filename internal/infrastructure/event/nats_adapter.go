@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"s3/internal/domain"
 	"time"
 
 	"github.com/google/uuid"
@@ -283,4 +284,50 @@ func (n *NATSAdapter) RequestInstanceToken(ctx context.Context, userID, instance
 
 	log.Printf("[S3-NATS] [SUCCESS] Instance token received: correlation_id=%s instance_id=%s", correlationID, instanceID)
 	return resp.Token, nil
+}
+
+type listVPCsRequest struct {
+	CorrelationID string `json:"correlation_id"`
+	TenantID      string `json:"tenant_id"`
+}
+
+type listVPCsResponse struct {
+	CorrelationID string       `json:"correlation_id"`
+	TenantID      string       `json:"tenant_id"`
+	VPCs          []domain.VPC `json:"vpcs"`
+	Error         string       `json:"error,omitempty"`
+}
+
+// ListVPCs requests the VPC list from the network service via NATS
+func (n *NATSAdapter) ListVPCs(ctx context.Context, tenantID string) ([]domain.VPC, error) {
+	correlationID := uuid.New().String()
+	subject := "dev.network.v1.vpc.list"
+
+	req := listVPCsRequest{
+		CorrelationID: correlationID,
+		TenantID:      tenantID,
+	}
+
+	data, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal vpc list request: %w", err)
+	}
+
+	log.Printf("[S3-NATS] [REQUEST] subject=%s correlation_id=%s tenant_id=%s", subject, correlationID, tenantID)
+
+	msg, err := n.conn.RequestWithContext(ctx, subject, data)
+	if err != nil {
+		return nil, fmt.Errorf("NATS request for VPCs failed: %w", err)
+	}
+
+	var resp listVPCsResponse
+	if err := json.Unmarshal(msg.Data, &resp); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal vpc list response: %w", err)
+	}
+
+	if resp.Error != "" {
+		return nil, fmt.Errorf("network service error: %s", resp.Error)
+	}
+
+	return resp.VPCs, nil
 }
