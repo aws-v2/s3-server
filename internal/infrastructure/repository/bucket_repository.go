@@ -85,25 +85,41 @@ func (r *PostgresRepository) UpdateBucket(ctx context.Context, bucket *domain.Bu
 		policyParam = nil
 	}
 
-	var corsParam interface{}
+	var corsParam, replParam, notifParam, loggingParam interface{}
 	if bucket.CORS != nil {
 		corsParam, err = json.Marshal(bucket.CORS)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal cors: %w", err)
 		}
-	} else {
-		corsParam = nil
+	}
+	if bucket.Replication != nil {
+		replParam, err = json.Marshal(bucket.Replication)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal replication: %w", err)
+		}
+	}
+	if bucket.Notifications != nil {
+		notifParam, err = json.Marshal(bucket.Notifications)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal notifications: %w", err)
+		}
+	}
+	if bucket.Logging != nil {
+		loggingParam, err = json.Marshal(bucket.Logging)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal logging: %w", err)
+		}
 	}
 
 	query := `UPDATE buckets 
-	          SET name = $1, updated_at = $2, policy = $3::jsonb, cors = $4::jsonb 
-	          WHERE id = $5 AND ($6 = '' OR owner_id = $6)
-	          RETURNING id, name, created_at, updated_at, policy, cors`
+	          SET name = $1, updated_at = $2, policy = $3::jsonb, cors = $4::jsonb, replication = $5::jsonb, notifications = $6::jsonb, logging = $7::jsonb
+	          WHERE id = $8 AND ($9 = '' OR owner_id = $9)
+	          RETURNING id, name, created_at, updated_at, policy, cors, replication, notifications, logging`
 
-	var returnedPolicy, returnedCORS []byte
+	var returnedPolicy, returnedCORS, returnedRepl, returnedNotif, returnedLogging []byte
 
-	err = r.db.QueryRowContext(ctx, query, bucket.Name, bucket.UpdatedAt, policyParam, corsParam, bucket.ID, ownerID).Scan(
-		&bucket.ID, &bucket.Name, &bucket.CreatedAt, &bucket.UpdatedAt, &returnedPolicy, &returnedCORS,
+	err = r.db.QueryRowContext(ctx, query, bucket.Name, bucket.UpdatedAt, policyParam, corsParam, replParam, notifParam, loggingParam, bucket.ID, ownerID).Scan(
+		&bucket.ID, &bucket.Name, &bucket.CreatedAt, &bucket.UpdatedAt, &returnedPolicy, &returnedCORS, &returnedRepl, &returnedNotif, &returnedLogging,
 	)
 
 	if err != nil {
@@ -124,6 +140,24 @@ func (r *PostgresRepository) UpdateBucket(ctx context.Context, bucket *domain.Bu
 		}
 	} else {
 		bucket.CORS = nil
+	}
+
+	if len(returnedRepl) > 0 {
+		if err := json.Unmarshal(returnedRepl, &bucket.Replication); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal replication: %w", err)
+		}
+	}
+
+	if len(returnedNotif) > 0 {
+		if err := json.Unmarshal(returnedNotif, &bucket.Notifications); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal notifications: %w", err)
+		}
+	}
+
+	if len(returnedLogging) > 0 {
+		if err := json.Unmarshal(returnedLogging, &bucket.Logging); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal logging: %w", err)
+		}
 	}
 
 	return bucket, nil
@@ -172,12 +206,12 @@ func (r *PostgresRepository) IncrementPolicyVersionAndUpdateBucket(ctx context.C
 }
 
 func (r *PostgresRepository) GetBucketByName(ctx context.Context, name string, ownerID string) (domain.Bucket, error) {
-	query := `SELECT id, name, owner_id, arn, region, bucket_type, object_ownership, created_at, updated_at, policy, cors, storage_name FROM buckets WHERE name = $1 AND ($2 = '' OR owner_id = $2)`
+	query := `SELECT id, name, owner_id, arn, region, bucket_type, object_ownership, created_at, updated_at, policy, cors, replication, notifications, logging, storage_name FROM buckets WHERE name = $1 AND ($2 = '' OR owner_id = $2)`
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	var bucket domain.Bucket
-	var policyJSON, corsJSON []byte
+	var policyJSON, corsJSON, replJSON, notifJSON, loggingJSON []byte
 
 	err := r.db.QueryRowContext(ctx, query, name, ownerID).Scan(
 		&bucket.ID,
@@ -191,6 +225,9 @@ func (r *PostgresRepository) GetBucketByName(ctx context.Context, name string, o
 		&bucket.UpdatedAt,
 		&policyJSON,
 		&corsJSON,
+		&replJSON,
+		&notifJSON,
+		&loggingJSON,
 		&bucket.StorageName,
 	)
 
@@ -204,6 +241,30 @@ func (r *PostgresRepository) GetBucketByName(ctx context.Context, name string, o
 	if len(policyJSON) > 0 {
 		if err := json.Unmarshal(policyJSON, &bucket.Policy); err != nil {
 			return domain.Bucket{}, fmt.Errorf("failed to unmarshal policy: %w", err)
+		}
+	}
+
+	if len(corsJSON) > 0 {
+		if err := json.Unmarshal(corsJSON, &bucket.CORS); err != nil {
+			return domain.Bucket{}, fmt.Errorf("failed to unmarshal cors: %w", err)
+		}
+	}
+
+	if len(replJSON) > 0 {
+		if err := json.Unmarshal(replJSON, &bucket.Replication); err != nil {
+			return domain.Bucket{}, fmt.Errorf("failed to unmarshal replication: %w", err)
+		}
+	}
+
+	if len(notifJSON) > 0 {
+		if err := json.Unmarshal(notifJSON, &bucket.Notifications); err != nil {
+			return domain.Bucket{}, fmt.Errorf("failed to unmarshal notifications: %w", err)
+		}
+	}
+
+	if len(loggingJSON) > 0 {
+		if err := json.Unmarshal(loggingJSON, &bucket.Logging); err != nil {
+			return domain.Bucket{}, fmt.Errorf("failed to unmarshal logging: %w", err)
 		}
 	}
 
@@ -275,6 +336,146 @@ func (r *PostgresRepository) SetBucketBlockPublicAccess(ctx context.Context, buc
 	return nil
 }
 
+func (r *PostgresRepository) SetBucketEncryption(ctx context.Context, bucketID string, encryption domain.BucketEncryption) error {
+	encJSON, err := json.Marshal(encryption)
+	if err != nil {
+		return err
+	}
+
+	query := `UPDATE buckets SET encryption = $1, updated_at = NOW() WHERE id = $2`
+	res, err := r.db.ExecContext(ctx, query, encJSON, bucketID)
+	if err != nil {
+		return err
+	}
+
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return errors.New("bucket not found")
+	}
+	return nil
+}
+
+func (r *PostgresRepository) GetBucketReplication(ctx context.Context, bucketID string) (interface{}, error) {
+	var replJSON []byte
+	query := `SELECT replication FROM buckets WHERE id = $1`
+	err := r.db.QueryRowContext(ctx, query, bucketID).Scan(&replJSON)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, errors.New("bucket not found")
+		}
+		return nil, err
+	}
+	var repl interface{}
+	if len(replJSON) > 0 {
+		if err := json.Unmarshal(replJSON, &repl); err != nil {
+			return nil, err
+		}
+	}
+	return repl, nil
+}
+
+func (r *PostgresRepository) GetBucketTags(ctx context.Context, bucketID string) ([]domain.Tag, error) {
+	var tagsJSON []byte
+	query := `SELECT tags FROM buckets WHERE id = $1`
+	err := r.db.QueryRowContext(ctx, query, bucketID).Scan(&tagsJSON)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, errors.New("bucket not found")
+		}
+		return nil, err
+	}
+	var tags []domain.Tag
+	if len(tagsJSON) > 0 {
+		if err := json.Unmarshal(tagsJSON, &tags); err != nil {
+			return nil, err
+		}
+	}
+	return tags, nil
+}
+
+func (r *PostgresRepository) GetBucketNotifications(ctx context.Context, bucketID string) (interface{}, error) {
+	var notifJSON []byte
+	query := `SELECT notifications FROM buckets WHERE id = $1`
+	err := r.db.QueryRowContext(ctx, query, bucketID).Scan(&notifJSON)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, errors.New("bucket not found")
+		}
+		return nil, err
+	}
+	var notif interface{}
+	if len(notifJSON) > 0 {
+		if err := json.Unmarshal(notifJSON, &notif); err != nil {
+			return nil, err
+		}
+	}
+	return notif, nil
+}
+
+func (r *PostgresRepository) SetBucketObjectLock(ctx context.Context, bucketID string, enabled bool) error {
+	query := `UPDATE buckets SET object_lock = $1, updated_at = NOW() WHERE id = $2`
+	res, err := r.db.ExecContext(ctx, query, enabled, bucketID)
+	if err != nil {
+		return err
+	}
+
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return errors.New("bucket not found")
+	}
+	return nil
+}
+
+func (r *PostgresRepository) SetBucketReplication(ctx context.Context, bucketID string, replication interface{}) error {
+	replJSON, err := json.Marshal(replication)
+	if err != nil {
+		return err
+	}
+
+	query := `UPDATE buckets SET replication = $1, updated_at = NOW() WHERE id = $2`
+	_, err = r.db.ExecContext(ctx, query, replJSON, bucketID)
+	return err
+}
+
+func (r *PostgresRepository) SetBucketLogging(ctx context.Context, bucketID string, logging interface{}) error {
+	loggingJSON, err := json.Marshal(logging)
+	if err != nil {
+		return err
+	}
+
+	query := `UPDATE buckets SET logging = $1, updated_at = NOW() WHERE id = $2`
+	_, err = r.db.ExecContext(ctx, query, loggingJSON, bucketID)
+	return err
+}
+
+func (r *PostgresRepository) SetBucketNotifications(ctx context.Context, bucketID string, notifications interface{}) error {
+	notifJSON, err := json.Marshal(notifications)
+	if err != nil {
+		return err
+	}
+
+	query := `UPDATE buckets SET notifications = $1, updated_at = NOW() WHERE id = $2`
+	_, err = r.db.ExecContext(ctx, query, notifJSON, bucketID)
+	return err
+}
+
+func (r *PostgresRepository) SetBucketTags(ctx context.Context, bucketID string, tags []domain.Tag) error {
+	tagsJSON, err := json.Marshal(tags)
+	if err != nil {
+		return err
+	}
+
+	query := `UPDATE buckets SET tags = $1, updated_at = NOW() WHERE id = $2`
+	_, err = r.db.ExecContext(ctx, query, tagsJSON, bucketID)
+	return err
+}
+
 // SaveBucket creates a new bucket
 func (r *PostgresRepository) SaveBucket(ctx context.Context, bucket *domain.Bucket) (domain.Bucket, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -302,9 +503,9 @@ func (r *PostgresRepository) SaveBucket(ctx context.Context, bucket *domain.Buck
 		INSERT INTO buckets (
 			id, name, owner_id, region, bucket_type, object_ownership, 
 			block_public_access, versioning_status, tags, encryption, 
-			object_lock, arn, storage_name, cors, created_at, updated_at
+			object_lock, arn, storage_name, cors, replication, notifications, logging, created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
 		RETURNING id, name, owner_id, arn, storage_name, created_at, updated_at
 	`
 
@@ -313,6 +514,27 @@ func (r *PostgresRepository) SaveBucket(ctx context.Context, bucket *domain.Buck
 	if bucket.CORS != nil {
 		if b, err := json.Marshal(bucket.CORS); err == nil {
 			corsJSON = b
+		}
+	}
+
+	replJSON := []byte(`{}`)
+	if bucket.Replication != nil {
+		if b, err := json.Marshal(bucket.Replication); err == nil {
+			replJSON = b
+		}
+	}
+
+	notifJSON := []byte(`{}`)
+	if bucket.Notifications != nil {
+		if b, err := json.Marshal(bucket.Notifications); err == nil {
+			notifJSON = b
+		}
+	}
+
+	loggingJSON := []byte(`{}`)
+	if bucket.Logging != nil {
+		if b, err := json.Marshal(bucket.Logging); err == nil {
+			loggingJSON = b
 		}
 	}
 
@@ -331,6 +553,9 @@ func (r *PostgresRepository) SaveBucket(ctx context.Context, bucket *domain.Buck
 		bucket.ARN,
 		bucket.StorageName,
 		corsJSON,
+		replJSON,
+		notifJSON,
+		loggingJSON,
 		bucket.CreatedAt,
 		bucket.UpdatedAt,
 	).Scan(
@@ -359,7 +584,7 @@ func (r *PostgresRepository) ListBuckets(ctx context.Context, ownerID string) ([
 	defer cancel()
 
 	query := `
-	SELECT id, name, owner_id, created_at, updated_at, region, bucket_type, storage_name, arn
+	SELECT id, name, owner_id, created_at, updated_at, region, bucket_type, storage_name, arn, replication, notifications, logging
 	FROM buckets
 	WHERE ($1 = '' OR owner_id = $1)
 	ORDER BY created_at DESC
@@ -374,6 +599,7 @@ func (r *PostgresRepository) ListBuckets(ctx context.Context, ownerID string) ([
 	var buckets []domain.Bucket
 	for rows.Next() {
 		var bucket domain.Bucket
+		var replJSON, notifJSON, loggingJSON []byte
 		err := rows.Scan(
 			&bucket.ID,
 			&bucket.Name,
@@ -384,10 +610,31 @@ func (r *PostgresRepository) ListBuckets(ctx context.Context, ownerID string) ([
 			&bucket.BucketType,
 			&bucket.StorageName,
 			&bucket.ARN,
+			&replJSON,
+			&notifJSON,
+			&loggingJSON,
 		)
 
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan bucket: %w", err)
+		}
+
+		if len(replJSON) > 0 {
+			if err := json.Unmarshal(replJSON, &bucket.Replication); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal replication: %w", err)
+			}
+		}
+
+		if len(notifJSON) > 0 {
+			if err := json.Unmarshal(notifJSON, &bucket.Notifications); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal notifications: %w", err)
+			}
+		}
+
+		if len(loggingJSON) > 0 {
+			if err := json.Unmarshal(loggingJSON, &bucket.Logging); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal logging: %w", err)
+			}
 		}
 
 		buckets = append(buckets, bucket)
@@ -401,17 +648,12 @@ func (r *PostgresRepository) ListBuckets(ctx context.Context, ownerID string) ([
 }
 
 func (r *PostgresRepository) GetBucketByID(ctx context.Context, bucketID string, ownerID string) (domain.Bucket, error) {
+	query := `SELECT id, name, owner_id, arn, region, bucket_type, object_ownership, created_at, updated_at, policy, cors, replication, notifications, logging, storage_name FROM buckets WHERE id = $1 AND ($2 = '' OR owner_id = $2)`
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	query := `
-		SELECT id, name, owner_id, arn, region, bucket_type, object_ownership, created_at, updated_at, policy, cors, storage_name
-		FROM buckets
-		WHERE id = $1 AND ($2 = '' OR owner_id = $2)
-	`
-
 	var bucket domain.Bucket
-	var policyJSON, corsJSON []byte
+	var policyJSON, corsJSON, replJSON, notifJSON, loggingJSON []byte
 
 	err := r.db.QueryRowContext(ctx, query, bucketID, ownerID).Scan(
 		&bucket.ID,
@@ -425,6 +667,9 @@ func (r *PostgresRepository) GetBucketByID(ctx context.Context, bucketID string,
 		&bucket.UpdatedAt,
 		&policyJSON,
 		&corsJSON,
+		&replJSON,
+		&notifJSON,
+		&loggingJSON,
 		&bucket.StorageName,
 	)
 
@@ -441,8 +686,27 @@ func (r *PostgresRepository) GetBucketByID(ctx context.Context, bucketID string,
 		}
 	}
 
+	if len(corsJSON) > 0 {
+		if err := json.Unmarshal(corsJSON, &bucket.CORS); err != nil {
+			return domain.Bucket{}, fmt.Errorf("failed to unmarshal cors: %w", err)
+		}
+	}
+
+	if len(replJSON) > 0 {
+		if err := json.Unmarshal(replJSON, &bucket.Replication); err != nil {
+			return domain.Bucket{}, fmt.Errorf("failed to unmarshal replication: %w", err)
+		}
+	}
+
+	if len(notifJSON) > 0 {
+		if err := json.Unmarshal(notifJSON, &bucket.Notifications); err != nil {
+			return domain.Bucket{}, fmt.Errorf("failed to unmarshal notifications: %w", err)
+		}
+	}
+
 	return bucket, nil
 }
+
 func (r *PostgresRepository) GetBucketCORS(ctx context.Context, bucketID string) (*domain.CORSConfiguration, error) {
 	query := `SELECT cors FROM buckets WHERE id = $1`
 	var corsJSON []byte

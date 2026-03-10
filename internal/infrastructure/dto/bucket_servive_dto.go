@@ -135,3 +135,41 @@ type CORSRule struct {
 type CORSConfiguration struct {
 	CORSRules []CORSRule `json:"corsRules"`
 }
+
+type ReplicationOutput struct {
+	Replication interface{} `json:"replication"`
+}
+
+type NotificationsOutput struct {
+	Notifications interface{} `json:"notifications"`
+}
+
+type TagsOutput struct {
+	Tags []Tag `json:"tags"`
+}
+
+type ObjectLockInput struct {
+	Status string `json:"status" binding:"required,oneof=Enabled Disabled"`
+}
+
+type UpdateReplicationInput struct {
+	Name     string `json:"name"`
+	Priority int    `json:"priority"`
+	Status   string `json:"status" binding:"required,oneof=Enabled Disabled"`
+}
+
+type UpdateLoggingInput struct {
+	Status       string `json:"status" binding:"required,oneof=Enabled Disabled"`
+	TargetBucket string `json:"targetBucket"`
+	TargetPrefix string `json:"targetPrefix"`
+}
+
+type UpdateNotificationsInput struct {
+	Name        string   `json:"name"`
+	EventTypes  []string `json:"eventTypes"`
+	Destination string   `json:"destination"`
+}
+
+type UpdateTagsInput struct {
+	Tags []Tag `json:"tags"`
+}

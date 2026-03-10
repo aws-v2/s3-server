@@ -670,3 +670,196 @@ func (s *BucketService) SetBucketCORS(ctx context.Context, bucketID string, inpu
 
 	return nil
 }
+
+func (s *BucketService) SetBucketEncryption(ctx context.Context, bucketID string, input dto.BucketEncryption) error {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
+	if err != nil {
+		return err
+	}
+
+	encryption := domain.BucketEncryption{
+		Type:             input.Type,
+		BucketKeyEnabled: input.BucketKeyEnabled,
+	}
+
+	if err := s.repo.SetBucketEncryption(ctx, bucket.ID, encryption); err != nil {
+		return fmt.Errorf("failed to save encryption configuration: %w", err)
+	}
+
+	return nil
+}
+
+func (s *BucketService) GetBucketReplication(ctx context.Context, bucketID string) (*dto.ReplicationOutput, error) {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
+	if err != nil {
+		return nil, err
+	}
+
+	repl, err := s.repo.GetBucketReplication(ctx, bucket.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get replication configuration: %w", err)
+	}
+
+	return &dto.ReplicationOutput{Replication: repl}, nil
+}
+
+func (s *BucketService) GetBucketTags(ctx context.Context, bucketID string) (*dto.TagsOutput, error) {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
+	if err != nil {
+		return nil, err
+	}
+
+	tags, err := s.repo.GetBucketTags(ctx, bucket.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get bucket tags: %w", err)
+	}
+
+	dtoTags := make([]dto.Tag, len(tags))
+	for i, t := range tags {
+		dtoTags[i] = dto.Tag{Key: t.Key, Value: t.Value}
+	}
+
+	return &dto.TagsOutput{Tags: dtoTags}, nil
+}
+
+func (s *BucketService) GetBucketNotifications(ctx context.Context, bucketID string) (*dto.NotificationsOutput, error) {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
+	if err != nil {
+		return nil, err
+	}
+
+	notif, err := s.repo.GetBucketNotifications(ctx, bucket.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get notification configuration: %w", err)
+	}
+
+	return &dto.NotificationsOutput{Notifications: notif}, nil
+}
+
+func (s *BucketService) SetBucketObjectLock(ctx context.Context, bucketID string, input dto.ObjectLockInput) error {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
+	if err != nil {
+		return err
+	}
+
+	enabled := input.Status == "Enabled"
+	if err := s.repo.SetBucketObjectLock(ctx, bucket.ID, enabled); err != nil {
+		return fmt.Errorf("failed to save object lock configuration: %w", err)
+	}
+
+	return nil
+}
+
+func (s *BucketService) SetBucketReplication(ctx context.Context, bucketID string, input dto.UpdateReplicationInput) error {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
+	if err != nil {
+		return err
+	}
+
+	if err := s.repo.SetBucketReplication(ctx, bucket.ID, input); err != nil {
+		return fmt.Errorf("failed to save replication configuration: %w", err)
+	}
+
+	return nil
+}
+
+func (s *BucketService) SetBucketLogging(ctx context.Context, bucketID string, input dto.UpdateLoggingInput) error {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
+	if err != nil {
+		return err
+	}
+
+	if err := s.repo.SetBucketLogging(ctx, bucket.ID, input); err != nil {
+		return fmt.Errorf("failed to save logging configuration: %w", err)
+	}
+
+	return nil
+}
+
+func (s *BucketService) SetBucketNotifications(ctx context.Context, bucketID string, input dto.UpdateNotificationsInput) error {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
+	if err != nil {
+		return err
+	}
+
+	if err := s.repo.SetBucketNotifications(ctx, bucket.ID, input); err != nil {
+		return fmt.Errorf("failed to save notifications configuration: %w", err)
+	}
+
+	return nil
+}
+
+func (s *BucketService) SetBucketTags(ctx context.Context, bucketID string, input dto.UpdateTagsInput) error {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
+	if err != nil {
+		return err
+	}
+
+	var domainTags []domain.Tag
+	for _, t := range input.Tags {
+		domainTags = append(domainTags, domain.Tag{
+			Key:   t.Key,
+			Value: t.Value,
+		})
+	}
+
+	if err := s.repo.SetBucketTags(ctx, bucket.ID, domainTags); err != nil {
+		return fmt.Errorf("failed to save tags configuration: %w", err)
+	}
+
+	return nil
+}

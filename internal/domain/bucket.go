@@ -19,6 +19,9 @@ type Bucket struct {
 	StorageName       string             `json:"storage_name"`
 	Policy            *Policy            `json:"policy,omitempty"`
 	CORS              *CORSConfiguration `json:"cors,omitempty"`
+	Replication       interface{}        `json:"replication,omitempty"`
+	Notifications     interface{}        `json:"notifications,omitempty"`
+	Logging           interface{}        `json:"logging,omitempty"`
 	ARN               string             `json:"arn"`
 }
 

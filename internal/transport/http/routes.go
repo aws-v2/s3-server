@@ -139,6 +139,22 @@ func registerBucketRoutes(v1 *gin.RouterGroup, handlers *Handlers, validator mid
 		buckets.PUT("/:bucketId/lifecycle", handler.SetBucketLifecycle)
 		buckets.GET("/:bucketId/lifecycle", handler.GetBucketLifecycle)
 
+		// Encryption
+		buckets.PUT("/:bucketId/encryption", handler.SetBucketEncryption)
+		// Replication
+		buckets.GET("/:bucketId/replication", handler.GetBucketReplication)
+		buckets.POST("/:bucketId/replication", handler.UpdateBucketReplication)
+		// Tags
+		buckets.GET("/:bucketId/tags", handler.GetBucketTags)
+		buckets.PUT("/:bucketId/tags", handler.UpdateBucketTags)
+		// Notifications
+		buckets.GET("/:bucketId/notifications", handler.GetBucketNotifications)
+		buckets.POST("/:bucketId/notifications", handler.UpdateBucketNotifications)
+		// Logging
+		buckets.PUT("/:bucketId/logging", handler.UpdateBucketLogging)
+		// Object Lock
+		buckets.PUT("/:bucketId/object-lock", handler.SetBucketObjectLock)
+
 		// Access Points
 		buckets.POST("/:bucketId/access-points", handlers.AccessPoint.CreateAccessPoint)
 		buckets.GET("/:bucketId/access-points", handlers.AccessPoint.ListAccessPoints)
