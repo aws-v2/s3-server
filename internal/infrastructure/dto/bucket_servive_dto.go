@@ -152,6 +152,10 @@ type ObjectLockInput struct {
 	Status string `json:"status" binding:"required,oneof=Enabled Disabled"`
 }
 
+type ObjectLockOutput struct {
+	Enabled bool `json:"enabled"`
+}
+
 type UpdateReplicationInput struct {
 	Name     string `json:"name"`
 	Priority int    `json:"priority"`
@@ -160,6 +164,12 @@ type UpdateReplicationInput struct {
 
 type UpdateLoggingInput struct {
 	Status       string `json:"status" binding:"required,oneof=Enabled Disabled"`
+	TargetBucket string `json:"targetBucket"`
+	TargetPrefix string `json:"targetPrefix"`
+}
+
+type LoggingOutput struct {
+	Status       string `json:"status"`
 	TargetBucket string `json:"targetBucket"`
 	TargetPrefix string `json:"targetPrefix"`
 }

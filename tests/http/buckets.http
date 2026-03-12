@@ -83,8 +83,20 @@ Content-Type: application/json
     }
   ]
 }
+### SET BUCKET ENCRYPTION
+PUT {{BucketUrls}}/{{BucketId}}/encryption
+Content-Type: application/json
 
+{
+    "type": "SSE-S3",
+    "bucketKeyEnabled": false
+}
 
+### GET BUCKET ENCRYPTION
+GET {{BucketUrls}}/{{BucketId}}/encryption
 
+### GET BUCKET OBJECT LOCK
+GET {{BucketUrls}}/{{BucketId}}/object-lock
 
-
+### GET BUCKET LOGGING
+GET {{BucketUrls}}/{{BucketId}}/logging

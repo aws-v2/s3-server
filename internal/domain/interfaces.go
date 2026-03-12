@@ -136,10 +136,13 @@ type RepositoryPort interface {
 	SetBucketCORS(ctx context.Context, bucketID string, cors *CORSConfiguration) error
 	// New Configurations
 	SetBucketEncryption(ctx context.Context, bucketID string, encryption BucketEncryption) error
+	GetBucketEncryption(ctx context.Context, bucketID string) (BucketEncryption, error)
 	GetBucketReplication(ctx context.Context, bucketID string) (interface{}, error)
 	GetBucketTags(ctx context.Context, bucketID string) ([]Tag, error)
 	GetBucketNotifications(ctx context.Context, bucketID string) (interface{}, error)
 	SetBucketObjectLock(ctx context.Context, bucketID string, enabled bool) error
+	GetBucketObjectLock(ctx context.Context, bucketID string) (bool, error)
+	GetBucketLogging(ctx context.Context, bucketID string) (interface{}, error)
 	SetBucketReplication(ctx context.Context, bucketID string, replication interface{}) error
 	SetBucketLogging(ctx context.Context, bucketID string, logging interface{}) error
 	SetBucketNotifications(ctx context.Context, bucketID string, notifications interface{}) error

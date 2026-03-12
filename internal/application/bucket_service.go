@@ -695,6 +695,29 @@ func (s *BucketService) SetBucketEncryption(ctx context.Context, bucketID string
 	return nil
 }
 
+func (s *BucketService) GetBucketEncryption(ctx context.Context, bucketID string) (*dto.BucketEncryption, error) {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
+	if err != nil {
+		return nil, err
+	}
+
+	encryption, err := s.repo.GetBucketEncryption(ctx, bucket.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get encryption configuration: %w", err)
+	}
+
+	return &dto.BucketEncryption{
+		Type:             encryption.Type,
+		BucketKeyEnabled: encryption.BucketKeyEnabled,
+	}, nil
+}
+
 func (s *BucketService) GetBucketReplication(ctx context.Context, bucketID string) (*dto.ReplicationOutput, error) {
 	actor, _ := ctx.Value("actor").(domain.Actor)
 	filterID := actor.ID
@@ -759,7 +782,6 @@ func (s *BucketService) GetBucketNotifications(ctx context.Context, bucketID str
 
 	return &dto.NotificationsOutput{Notifications: notif}, nil
 }
-
 func (s *BucketService) SetBucketObjectLock(ctx context.Context, bucketID string, input dto.ObjectLockInput) error {
 	actor, _ := ctx.Value("actor").(domain.Actor)
 	filterID := actor.ID
@@ -778,6 +800,26 @@ func (s *BucketService) SetBucketObjectLock(ctx context.Context, bucketID string
 	}
 
 	return nil
+}
+
+func (s *BucketService) GetBucketObjectLock(ctx context.Context, bucketID string) (*dto.ObjectLockOutput, error) {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
+	if err != nil {
+		return nil, err
+	}
+
+	enabled, err := s.repo.GetBucketObjectLock(ctx, bucket.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get object lock configuration: %w", err)
+	}
+
+	return &dto.ObjectLockOutput{Enabled: enabled}, nil
 }
 
 func (s *BucketService) SetBucketReplication(ctx context.Context, bucketID string, input dto.UpdateReplicationInput) error {
@@ -816,6 +858,51 @@ func (s *BucketService) SetBucketLogging(ctx context.Context, bucketID string, i
 	}
 
 	return nil
+}
+
+func (s *BucketService) GetBucketLogging(ctx context.Context, bucketID string) (*dto.LoggingOutput, error) {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
+	if err != nil {
+		return nil, err
+	}
+
+	logging, err := s.repo.GetBucketLogging(ctx, bucket.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get logging configuration: %w", err)
+	}
+
+	if logging == nil {
+		return &dto.LoggingOutput{Status: "Disabled"}, nil
+	}
+
+	m, ok := logging.(map[string]interface{})
+	if !ok {
+		return &dto.LoggingOutput{Status: "Disabled"}, nil
+	}
+
+	output := &dto.LoggingOutput{
+		Status:       "Disabled",
+		TargetBucket: "",
+		TargetPrefix: "",
+	}
+
+	if status, ok := m["status"].(string); ok {
+		output.Status = status
+	}
+	if targetBucket, ok := m["targetBucket"].(string); ok {
+		output.TargetBucket = targetBucket
+	}
+	if targetPrefix, ok := m["targetPrefix"].(string); ok {
+		output.TargetPrefix = targetPrefix
+	}
+
+	return output, nil
 }
 
 func (s *BucketService) SetBucketNotifications(ctx context.Context, bucketID string, input dto.UpdateNotificationsInput) error {

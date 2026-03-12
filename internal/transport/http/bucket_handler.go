@@ -394,6 +394,63 @@ func (h *BucketHandler) SetBucketEncryption(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "encryption configuration updated"})
 }
 
+func (h *BucketHandler) GetBucketEncryption(c *gin.Context) {
+	bucketID := c.Param("bucketId")
+
+	output, err := h.bucketService.GetBucketEncryption(c.Request.Context(), bucketID)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 200,
+		"data": output,
+	})
+}
+
+func (h *BucketHandler) GetBucketObjectLock(c *gin.Context) {
+	bucketID := c.Param("bucketId")
+
+	output, err := h.bucketService.GetBucketObjectLock(c.Request.Context(), bucketID)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 200,
+		"data": output,
+	})
+}
+
+func (h *BucketHandler) GetBucketLogging(c *gin.Context) {
+	bucketID := c.Param("bucketId")
+
+	output, err := h.bucketService.GetBucketLogging(c.Request.Context(), bucketID)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 200,
+		"data": output,
+	})
+}
+
 func (h *BucketHandler) GetBucketReplication(c *gin.Context) {
 	bucketID := c.Param("bucketId")
 

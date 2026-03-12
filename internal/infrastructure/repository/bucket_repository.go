@@ -358,6 +358,26 @@ func (r *PostgresRepository) SetBucketEncryption(ctx context.Context, bucketID s
 	return nil
 }
 
+func (r *PostgresRepository) GetBucketEncryption(ctx context.Context, bucketID string) (domain.BucketEncryption, error) {
+	var encJSON []byte
+	query := `SELECT encryption FROM buckets WHERE id = $1`
+	err := r.db.QueryRowContext(ctx, query, bucketID).Scan(&encJSON)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.BucketEncryption{}, errors.New("bucket not found")
+		}
+		return domain.BucketEncryption{}, err
+	}
+
+	var encryption domain.BucketEncryption
+	if len(encJSON) > 0 {
+		if err := json.Unmarshal(encJSON, &encryption); err != nil {
+			return domain.BucketEncryption{}, err
+		}
+	}
+	return encryption, nil
+}
+
 func (r *PostgresRepository) GetBucketReplication(ctx context.Context, bucketID string) (interface{}, error) {
 	var replJSON []byte
 	query := `SELECT replication FROM buckets WHERE id = $1`
@@ -395,7 +415,6 @@ func (r *PostgresRepository) GetBucketTags(ctx context.Context, bucketID string)
 	}
 	return tags, nil
 }
-
 func (r *PostgresRepository) GetBucketNotifications(ctx context.Context, bucketID string) (interface{}, error) {
 	var notifJSON []byte
 	query := `SELECT notifications FROM buckets WHERE id = $1`
@@ -413,6 +432,38 @@ func (r *PostgresRepository) GetBucketNotifications(ctx context.Context, bucketI
 		}
 	}
 	return notif, nil
+}
+
+func (r *PostgresRepository) GetBucketObjectLock(ctx context.Context, bucketID string) (bool, error) {
+	var enabled bool
+	query := `SELECT object_lock FROM buckets WHERE id = $1`
+	err := r.db.QueryRowContext(ctx, query, bucketID).Scan(&enabled)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, errors.New("bucket not found")
+		}
+		return false, err
+	}
+	return enabled, nil
+}
+
+func (r *PostgresRepository) GetBucketLogging(ctx context.Context, bucketID string) (interface{}, error) {
+	var loggingJSON []byte
+	query := `SELECT logging FROM buckets WHERE id = $1`
+	err := r.db.QueryRowContext(ctx, query, bucketID).Scan(&loggingJSON)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, errors.New("bucket not found")
+		}
+		return nil, err
+	}
+	var logging interface{}
+	if len(loggingJSON) > 0 {
+		if err := json.Unmarshal(loggingJSON, &logging); err != nil {
+			return nil, err
+		}
+	}
+	return logging, nil
 }
 
 func (r *PostgresRepository) SetBucketObjectLock(ctx context.Context, bucketID string, enabled bool) error {
