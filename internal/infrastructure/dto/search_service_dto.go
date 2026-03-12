@@ -1,6 +1,9 @@
 package dto
 
-import "time"
+import (
+	"s3/internal/domain"
+	"time"
+)
 
 type SearchFilesInput struct {
 	Query    string `form:"query" binding:"required"`
@@ -26,18 +29,7 @@ type SearchByContentInput struct {
 	Limit    int    `form:"limit"`
 }
 
-type AdvancedSearchInput struct {
-	Query        string            `json:"query"`
-	BucketID     string            `json:"bucket_id"`
-	Metadata     map[string]string `json:"metadata"`
-	Tags         []string          `json:"tags"`
-	MinSize      int64             `json:"min_size"`
-	MaxSize      int64             `json:"max_size"`
-	StartDate    *time.Time        `json:"start_date"`
-	EndDate      *time.Time        `json:"end_date"`
-	ContentTypes []string          `json:"content_types"`
-	Limit        int               `json:"limit"`
-}
+type AdvancedSearchInput = domain.AdvancedSearchInput
 
 type SearchResultOutput struct {
 	Results []SearchResult `json:"results"`

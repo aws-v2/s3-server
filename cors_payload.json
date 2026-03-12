@@ -1,0 +1,7 @@
+{
+  "corsRules": [
+    {
+      "test": "yes"
+    }
+  ]
+}

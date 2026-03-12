@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"s3/internal/domain"
 	"s3/internal/infrastructure/dto"
+	"s3/internal/infrastructure/metrics"
 	"time"
 
 	"github.com/google/uuid"
@@ -14,12 +15,14 @@ import (
 type BatchService struct {
 	repo    domain.RepositoryPort
 	storage domain.StoragePort
+	metrics *metrics.MetricsClient
 }
 
-func NewBatchService(repo domain.RepositoryPort, storage domain.StoragePort) *BatchService {
+func NewBatchService(repo domain.RepositoryPort, storage domain.StoragePort, metrics *metrics.MetricsClient) *BatchService {
 	return &BatchService{
 		repo:    repo,
 		storage: storage,
+		metrics: metrics,
 	}
 }
 
@@ -129,6 +132,18 @@ func (s *BatchService) processBatchUpload(ctx context.Context, operationID strin
 	operation.CompletedAt = &completedAt
 	operation.UpdatedAt = completedAt
 	s.repo.UpdateBatchOperation(ctx, operation)
+
+	// Emit metrics for BatchUpload (Tier 1 x N + Bytes)
+	var totalBytes int64
+	for _, f := range input.Files {
+		data, _ := base64.StdEncoding.DecodeString(f.Data)
+		totalBytes += int64(len(data))
+	}
+
+	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
+		PutRequests:   int64(len(input.Files)),
+		BytesUploaded: totalBytes,
+	})
 }
 
 // BatchDelete deletes multiple files
@@ -225,6 +240,11 @@ func (s *BatchService) processBatchDelete(ctx context.Context, operationID strin
 	operation.CompletedAt = &completedAt
 	operation.UpdatedAt = completedAt
 	s.repo.UpdateBatchOperation(ctx, operation)
+
+	// Emit metrics for BatchDelete (Tier 1/Free x N)
+	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
+		DeleteRequests: int64(len(input.Keys)),
+	})
 }
 
 // BatchCopy copies multiple files
@@ -621,4 +641,16 @@ func (s *BatchService) CancelBatchOperation(ctx context.Context, operationID str
 	}
 
 	return nil
+}
+
+func (s *BatchService) emitMetrics(ctx context.Context, bucketID, ownerID, region string, partial dto.S3IngestRequest) {
+	if s.metrics == nil {
+		return
+	}
+
+	partial.BucketID = bucketID
+	partial.OwnerID = ownerID
+	partial.Region = region
+
+	_ = s.metrics.SendS3Metrics(ctx, partial)
 }

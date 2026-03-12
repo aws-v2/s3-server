@@ -38,9 +38,9 @@ func ExtractUserIDMiddleware() gin.HandlerFunc {
 
 		if claims, ok := token.Claims.(jwt.MapClaims); ok {
 			// Try standard 'sub' first, then 'userId' fallback
-			userID, _ := claims["sub"].(string)
+			userID, _ := claims["userId"].(string)
 			if userID == "" {
-				userID, _ = claims["userId"].(string)
+				userID, _ = claims["sub"].(string)
 			}
 
 			if userID != "" {

@@ -1,13 +1,13 @@
 package dto
 
 import (
- 
+	"s3/internal/domain"
 	"time"
 )
 
 type BatchUploadInput struct {
-	BucketID string              `json:"bucket_id" binding:"required"`
-	Files    []BatchUploadFile   `json:"files" binding:"required,min=1"`
+	BucketID string            `json:"bucket_id" binding:"required"`
+	Files    []BatchUploadFile `json:"files" binding:"required,min=1"`
 }
 
 type BatchUploadFile struct {
@@ -45,8 +45,8 @@ type BatchMoveItem struct {
 }
 
 type BatchUpdateMetadataInput struct {
-	BucketID string                      `json:"bucket_id" binding:"required"`
-	Updates  []BatchMetadataUpdate       `json:"updates" binding:"required,min=1"`
+	BucketID string                `json:"bucket_id" binding:"required"`
+	Updates  []BatchMetadataUpdate `json:"updates" binding:"required,min=1"`
 }
 
 type BatchMetadataUpdate struct {
@@ -60,16 +60,16 @@ type BatchOperationOutput struct {
 }
 
 type BatchOperationStatusOutput struct {
-	ID             string                     `json:"id"`
-	Type           string                     `json:"type"`
-	Status         string                     `json:"status"`
-	TotalItems     int                        `json:"total_items"`
-	ProcessedItems int                        `json:"processed_items"`
-	FailedItems    int                        `json:"failed_items"`
+	ID             string                `json:"id"`
+	Type           string                `json:"type"`
+	Status         string                `json:"status"`
+	TotalItems     int                   `json:"total_items"`
+	ProcessedItems int                   `json:"processed_items"`
+	FailedItems    int                   `json:"failed_items"`
 	Errors         []BatchOperationError `json:"errors,omitempty"`
-	CreatedAt      time.Time                  `json:"created_at"`
-	UpdatedAt      time.Time                  `json:"updated_at"`
-	CompletedAt    *time.Time                 `json:"completed_at,omitempty"`
+	CreatedAt      time.Time             `json:"created_at"`
+	UpdatedAt      time.Time             `json:"updated_at"`
+	CompletedAt    *time.Time            `json:"completed_at,omitempty"`
 }
 
 type ListBatchOperationsInput struct {
@@ -82,8 +82,4 @@ type ListBatchOperationsOutput struct {
 	Operations []BatchOperationStatusOutput `json:"operations"`
 	Total      int                          `json:"total"`
 }
-type BatchOperationError struct {
-	Index   int    `json:"index"`
-	Item    string `json:"item"`
-	Error   string `json:"error"`
-}
+type BatchOperationError = domain.BatchOperationError

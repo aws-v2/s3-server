@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"s3/internal/domain"
 	"s3/internal/infrastructure/dto"
+	"s3/internal/infrastructure/metrics"
 	"sort"
 	"time"
 
@@ -17,10 +18,11 @@ import (
 type MultipartService struct {
 	repo    domain.RepositoryPort
 	storage domain.StoragePort
+	metrics *metrics.MetricsClient
 }
 
-func NewMultipartService(repo domain.RepositoryPort, storage domain.StoragePort) *MultipartService {
-	return &MultipartService{repo: repo, storage: storage}
+func NewMultipartService(repo domain.RepositoryPort, storage domain.StoragePort, metrics *metrics.MetricsClient) *MultipartService {
+	return &MultipartService{repo: repo, storage: storage, metrics: metrics}
 }
 
 func (s *MultipartService) InitiateMultipartUpload(ctx context.Context, input dto.InitiateMultipartUploadInput) (*dto.InitiateMultipartUploadOutput, error) {
@@ -37,6 +39,19 @@ func (s *MultipartService) InitiateMultipartUpload(ctx context.Context, input dt
 
 	if err := s.repo.SaveMultipartUpload(ctx, upload); err != nil {
 		return nil, fmt.Errorf("failed to initiate upload: %w", err)
+	}
+
+	// Emit metrics for Initiate (Tier 1)
+	// We might need bucket info for owner/region
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+	if bucket, err := s.repo.GetBucketByID(ctx, input.BucketID, filterID); err == nil {
+		go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
+			PutRequests: 1,
+		})
 	}
 
 	return &dto.InitiateMultipartUploadOutput{
@@ -92,6 +107,12 @@ func (s *MultipartService) UploadPart(ctx context.Context, input dto.UploadPartI
 	if err := s.repo.UpdateMultipartUpload(ctx, upload); err != nil {
 		return nil, fmt.Errorf("failed to update upload: %w", err)
 	}
+
+	// Emit metrics for UploadPart (Tier 1 + Bytes)
+	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
+		PutRequests:   1,
+		BytesUploaded: int64(len(input.Data)),
+	})
 
 	return &dto.UploadPartOutput{
 		PartNumber: part.PartNumber,
@@ -182,6 +203,11 @@ func (s *MultipartService) CompleteMultipartUpload(ctx context.Context, input dt
 	upload.UpdatedAt = time.Now()
 	s.repo.UpdateMultipartUpload(ctx, upload)
 
+	// Emit metrics for Complete (Tier 1)
+	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
+		PutRequests: 1,
+	})
+
 	return &dto.CompleteMultipartUploadOutput{
 		Key:      upload.Key,
 		Location: fmt.Sprintf("/%s/%s", bucket.Name, upload.Key),
@@ -218,6 +244,11 @@ func (s *MultipartService) AbortMultipartUpload(ctx context.Context, bucketID, u
 	upload.UpdatedAt = time.Now()
 	s.repo.UpdateMultipartUpload(ctx, upload)
 
+	// Emit metrics for Abort (DeleteRequest)
+	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
+		DeleteRequests: 1,
+	})
+
 	return nil
 }
 
@@ -242,6 +273,18 @@ func (s *MultipartService) ListParts(ctx context.Context, bucketID, uploadID str
 		Parts:    parts,
 		Total:    len(parts),
 	}, nil
+}
+
+func (s *MultipartService) emitMetrics(ctx context.Context, bucketID, ownerID, region string, partial dto.S3IngestRequest) {
+	if s.metrics == nil {
+		return
+	}
+
+	partial.BucketID = bucketID
+	partial.OwnerID = ownerID
+	partial.Region = region
+
+	_ = s.metrics.SendS3Metrics(ctx, partial)
 }
 
 func (s *MultipartService) ListMultipartUploads(ctx context.Context, bucketID string) (*dto.ListMultipartUploadsOutput, error) {

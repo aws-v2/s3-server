@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"s3/internal/domain"
 	"s3/internal/infrastructure/dto"
+	"s3/internal/infrastructure/metrics"
 	"strings"
 	"time"
 
@@ -16,12 +17,14 @@ import (
 type PrefixService struct {
 	repo    domain.RepositoryPort
 	storage domain.StoragePort
+	metrics *metrics.MetricsClient
 }
 
-func NewPrefixService(repo domain.RepositoryPort, storage domain.StoragePort) *PrefixService {
+func NewPrefixService(repo domain.RepositoryPort, storage domain.StoragePort, metrics *metrics.MetricsClient) *PrefixService {
 	return &PrefixService{
 		repo:    repo,
 		storage: storage,
+		metrics: metrics,
 	}
 }
 
@@ -31,6 +34,13 @@ func (s *PrefixService) ListByPrefix(ctx context.Context, input dto.ListByPrefix
 	files, err := s.repo.ListFilesByPrefix(ctx, input.BucketID, input.Prefix, 0) // Get all for filtering
 	if err != nil {
 		return nil, fmt.Errorf("failed to list files: %w", err)
+	}
+
+	// Emit metrics for ListByPrefix (Tier 2) - we need bucket info
+	if bucket, err := s.repo.GetBucketByID(ctx, input.BucketID, ""); err == nil {
+		go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
+			ListRequests: 1,
+		})
 	}
 
 	if input.Delimiter == "" {
@@ -131,6 +141,11 @@ func (s *PrefixService) DeleteByPrefix(ctx context.Context, input dto.DeleteByPr
 		deletedKeys = append(deletedKeys, file.Key)
 	}
 
+	// Emit metrics for DeleteByPrefix (Tier 1/Free)
+	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
+		DeleteRequests: int64(len(deletedKeys)),
+	})
+
 	return &dto.DeleteByPrefixOutput{
 		DeletedCount: len(deletedKeys),
 		DeletedKeys:  deletedKeys,
@@ -191,6 +206,14 @@ func (s *PrefixService) CopyByPrefix(ctx context.Context, input dto.CopyByPrefix
 
 		copiedKeys = append(copiedKeys, newKey)
 	}
+
+	// Emit metrics for Copy (Source Head + Dest Put)
+	go s.emitMetrics(context.Background(), srcBucket.ID, srcBucket.OwnerID, srcBucket.Region, dto.S3IngestRequest{
+		HeadRequests: int64(len(copiedKeys)),
+	})
+	go s.emitMetrics(context.Background(), destBucket.ID, destBucket.OwnerID, destBucket.Region, dto.S3IngestRequest{
+		PutRequests: int64(len(copiedKeys)),
+	})
 
 	return &dto.CopyByPrefixOutput{
 		CopiedCount: len(copiedKeys),
@@ -300,6 +323,12 @@ func (s *PrefixService) ArchiveByPrefix(ctx context.Context, input dto.ArchiveBy
 		return nil, fmt.Errorf("failed to save archive metadata: %w", err)
 	}
 
+	// Emit metrics for Archive (Tier 1 + Bytes)
+	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
+		PutRequests:   1,
+		BytesUploaded: int64(len(archiveData)),
+	})
+
 	return &dto.ArchiveByPrefixOutput{
 		ArchiveKey:  archiveKey,
 		FileCount:   len(files),
@@ -334,6 +363,18 @@ func (s *PrefixService) createZipArchive(ctx context.Context, bucketName string,
 	}
 
 	return buf.Bytes(), nil
+}
+
+func (s *PrefixService) emitMetrics(ctx context.Context, bucketID, ownerID, region string, partial dto.S3IngestRequest) {
+	if s.metrics == nil {
+		return
+	}
+
+	partial.BucketID = bucketID
+	partial.OwnerID = ownerID
+	partial.Region = region
+
+	_ = s.metrics.SendS3Metrics(ctx, partial)
 }
 
 // SetMetadataByPrefix sets metadata for files by prefix

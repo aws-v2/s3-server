@@ -204,7 +204,15 @@ func (h *BucketHandler) UpdateBucketPolicy(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
 		return
 	}
-	actor := actorI.(string)
+	var actor string
+	if a, ok := actorI.(domain.Actor); ok {
+		actor = a.ID
+	} else if aStr, ok := actorI.(string); ok {
+		actor = aStr
+	} else {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid actor type"})
+		return
+	}
 
 	bucketID := c.Param("bucketId")
 	var input dto.UpdatePolicyInput
@@ -305,4 +313,293 @@ func (h *BucketHandler) GetBucketLifecycle(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"rules": rules})
+}
+
+func (h *BucketHandler) SetBucketBlockPublicAccess(c *gin.Context) {
+	bucketID := c.Param("bucketId")
+
+	var input dto.SetBlockPublicAccessInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON payload"})
+		return
+	}
+
+	if err := h.bucketService.SetBucketBlockPublicAccess(c.Request.Context(), bucketID, input); err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "block public access updated"})
+}
+
+func (h *BucketHandler) GetBucketCORS(c *gin.Context) {
+	bucketID := c.Param("bucketId")
+
+	output, err := h.bucketService.GetBucketCORS(c.Request.Context(), bucketID)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, output)
+}
+
+func (h *BucketHandler) UpdateBucketCORS(c *gin.Context) {
+	bucketID := c.Param("bucketId")
+
+	var input dto.CORSConfiguration
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON payload: " + err.Error()})
+		return
+	}
+
+	if err := h.bucketService.SetBucketCORS(c.Request.Context(), bucketID, input); err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "cors configuration updated"})
+}
+
+func (h *BucketHandler) SetBucketEncryption(c *gin.Context) {
+	bucketID := c.Param("bucketId")
+
+	var input dto.BucketEncryption
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON payload: " + err.Error()})
+		return
+	}
+
+	if err := h.bucketService.SetBucketEncryption(c.Request.Context(), bucketID, input); err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "encryption configuration updated"})
+}
+
+func (h *BucketHandler) GetBucketEncryption(c *gin.Context) {
+	bucketID := c.Param("bucketId")
+
+	output, err := h.bucketService.GetBucketEncryption(c.Request.Context(), bucketID)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 200,
+		"data": output,
+	})
+}
+
+func (h *BucketHandler) GetBucketObjectLock(c *gin.Context) {
+	bucketID := c.Param("bucketId")
+
+	output, err := h.bucketService.GetBucketObjectLock(c.Request.Context(), bucketID)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 200,
+		"data": output,
+	})
+}
+
+func (h *BucketHandler) GetBucketLogging(c *gin.Context) {
+	bucketID := c.Param("bucketId")
+
+	output, err := h.bucketService.GetBucketLogging(c.Request.Context(), bucketID)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 200,
+		"data": output,
+	})
+}
+
+func (h *BucketHandler) GetBucketReplication(c *gin.Context) {
+	bucketID := c.Param("bucketId")
+
+	output, err := h.bucketService.GetBucketReplication(c.Request.Context(), bucketID)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, output)
+}
+
+func (h *BucketHandler) GetBucketTags(c *gin.Context) {
+	bucketID := c.Param("bucketId")
+
+	output, err := h.bucketService.GetBucketTags(c.Request.Context(), bucketID)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, output)
+}
+
+func (h *BucketHandler) GetBucketNotifications(c *gin.Context) {
+	bucketID := c.Param("bucketId")
+
+	output, err := h.bucketService.GetBucketNotifications(c.Request.Context(), bucketID)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, output)
+}
+
+func (h *BucketHandler) SetBucketObjectLock(c *gin.Context) {
+	bucketID := c.Param("bucketId")
+
+	var input dto.ObjectLockInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON payload: " + err.Error()})
+		return
+	}
+
+	if err := h.bucketService.SetBucketObjectLock(c.Request.Context(), bucketID, input); err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "object lock configuration updated"})
+}
+
+func (h *BucketHandler) UpdateBucketReplication(c *gin.Context) {
+	bucketID := c.Param("bucketId")
+
+	var input dto.UpdateReplicationInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON payload: " + err.Error()})
+		return
+	}
+
+	if err := h.bucketService.SetBucketReplication(c.Request.Context(), bucketID, input); err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "replication configuration updated"})
+}
+
+func (h *BucketHandler) UpdateBucketLogging(c *gin.Context) {
+	bucketID := c.Param("bucketId")
+
+	var input dto.UpdateLoggingInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON payload: " + err.Error()})
+		return
+	}
+
+	if err := h.bucketService.SetBucketLogging(c.Request.Context(), bucketID, input); err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "logging configuration updated"})
+}
+
+func (h *BucketHandler) UpdateBucketNotifications(c *gin.Context) {
+	bucketID := c.Param("bucketId")
+
+	var input dto.UpdateNotificationsInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON payload: " + err.Error()})
+		return
+	}
+
+	if err := h.bucketService.SetBucketNotifications(c.Request.Context(), bucketID, input); err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "notifications configuration updated"})
+}
+
+func (h *BucketHandler) UpdateBucketTags(c *gin.Context) {
+	bucketID := c.Param("bucketId")
+
+	var input dto.UpdateTagsInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON payload: " + err.Error()})
+		return
+	}
+
+	if err := h.bucketService.SetBucketTags(c.Request.Context(), bucketID, input); err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "tags configuration updated"})
 }

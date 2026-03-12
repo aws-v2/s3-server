@@ -8,6 +8,7 @@ import (
 	"os"
 	"s3/internal/domain"
 	"s3/internal/infrastructure/dto"
+	"s3/internal/infrastructure/metrics"
 	"strings"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 type BucketService struct {
 	repo    domain.RepositoryPort
 	storage domain.StoragePort
+	metrics *metrics.MetricsClient
 }
 
 type BucketAlreadyExists struct {
@@ -29,10 +31,11 @@ func (e *BucketAlreadyExists) Error() string {
 }
 
 // NewBucketService creates a new instance of BucketService.
-func NewBucketService(repo domain.RepositoryPort, storage domain.StoragePort) *BucketService {
+func NewBucketService(repo domain.RepositoryPort, storage domain.StoragePort, metrics *metrics.MetricsClient) *BucketService {
 	return &BucketService{
 		repo:    repo,
 		storage: storage,
+		metrics: metrics,
 	}
 }
 
@@ -106,12 +109,47 @@ func (s *BucketService) CreateBucket(ctx context.Context, input dto.CreateBucket
 		return nil, fmt.Errorf("failed to save bucket metadata: %w", err)
 	}
 
+	// Emit metrics for bucket creation (Tier 1)
+	go s.emitMetrics(context.Background(), bucketObject.ID, bucketObject.OwnerID, bucketObject.Region, dto.S3IngestRequest{
+		PutRequests: 1,
+	})
+
 	// Return success
 	return &dto.CreateBucketOutput{
 		BucketID:  bucketObject.ID,
 		Name:      input.Name,
 		CreatedAt: bucket.CreatedAt,
 	}, nil
+}
+
+func (s *BucketService) emitMetrics(ctx context.Context, bucketID, ownerID, region string, partial dto.S3IngestRequest) {
+	if s.metrics == nil {
+		return
+	}
+
+	// Enrich with basic info
+	partial.BucketID = bucketID
+	partial.OwnerID = ownerID
+	partial.Region = region
+
+	// Attempt to send
+	_ = s.metrics.SendS3Metrics(ctx, partial)
+}
+
+func (s *BucketService) resolveBucket(ctx context.Context, idOrName string, filterID string) (domain.Bucket, error) {
+	// Try by ID first
+	bucket, err := s.repo.GetBucketByID(ctx, idOrName, filterID)
+	if err == nil {
+		return bucket, nil
+	}
+
+	// Try by Name as fallback
+	bucket, err = s.repo.GetBucketByName(ctx, idOrName, filterID)
+	if err == nil {
+		return bucket, nil
+	}
+
+	return domain.Bucket{}, fmt.Errorf("bucket not found: %s", idOrName)
 }
 
 func (s *BucketService) GetBucket(ctx context.Context, bucketID string) (*dto.GetBucketOutput, error) {
@@ -121,14 +159,20 @@ func (s *BucketService) GetBucket(ctx context.Context, bucketID string) (*dto.Ge
 		filterID = ""
 	}
 
-	bucket, err := s.repo.GetBucketByID(ctx, bucketID, filterID)
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
 	if err != nil {
-		return nil, fmt.Errorf("bucket not found: %w", err)
+		return nil, err
 	}
+
+	// Emit metrics for bucket detail (Tier 2 - Head/Get)
+	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
+		HeadRequests: 1,
+	})
 
 	return &dto.GetBucketOutput{
 		BucketID:   bucket.ID,
 		Name:       bucket.Name,
+		ARN:        bucket.ARN,
 		CreatedAt:  bucket.CreatedAt,
 		BucketType: bucket.BucketType,
 		Region:     bucket.Region,
@@ -142,7 +186,12 @@ func (s *BucketService) ListBuckets(ctx context.Context) ([]domain.Bucket, error
 		filterID = ""
 	}
 	fmt.Printf("-------------------*-%s-*------------", actor)
-	return s.repo.ListBuckets(ctx, filterID)
+	buckets, err := s.repo.ListBuckets(ctx, filterID)
+	if err == nil {
+		// Emit metrics for List (Tier 2) - Note: This is an account-level list, but we can log it
+		// For simplicity, we'll skip per-bucket metrics here unless a specific bucket was requested
+	}
+	return buckets, err
 }
 
 func (s *BucketService) UpdateBucket(ctx context.Context, bucketID string, input dto.UpdateBucketInput) (*dto.GetBucketOutput, error) {
@@ -151,10 +200,9 @@ func (s *BucketService) UpdateBucket(ctx context.Context, bucketID string, input
 	if IsAdmin(actor.ID) {
 		filterID = ""
 	}
-
-	bucket, err := s.repo.GetBucketByID(ctx, bucketID, filterID)
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
 	if err != nil {
-		return nil, fmt.Errorf("bucket not found: %w", err)
+		return nil, err
 	}
 
 	if input.Name != "" {
@@ -170,6 +218,11 @@ func (s *BucketService) UpdateBucket(ctx context.Context, bucketID string, input
 	if err != nil {
 		return nil, fmt.Errorf("failed to update bucket: %w", err)
 	}
+
+	// Emit metrics for update (Tier 1)
+	go s.emitMetrics(context.Background(), updated.ID, updated.OwnerID, updated.Region, dto.S3IngestRequest{
+		PutRequests: 1,
+	})
 
 	return &dto.GetBucketOutput{
 		BucketID:  updated.ID,
@@ -193,10 +246,9 @@ func (s *BucketService) DeleteBucket(ctx context.Context, bucketID string) error
 	if len(files) > 0 {
 		return fmt.Errorf("cannot delete bucket with files")
 	}
-	bucket, err := s.repo.GetBucketByName(ctx, bucketID, filterID)
-
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
 	if err != nil {
-		return fmt.Errorf("bucket not found: %w", err)
+		return err
 	}
 
 	if err := s.storage.DeleteBucket(ctx, bucket.StorageName); err != nil {
@@ -207,6 +259,12 @@ func (s *BucketService) DeleteBucket(ctx context.Context, bucketID string) error
 
 		return fmt.Errorf("failed to delete bucket: %w", err)
 	}
+
+	// Emit metrics for delete (Tier 1/Free)
+	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
+		DeleteRequests: 1,
+	})
+
 	return nil
 }
 
@@ -217,9 +275,9 @@ func (s *BucketService) EmptyBucket(ctx context.Context, bucketID string) error 
 		filterID = ""
 	}
 
-	bucket, err := s.repo.GetBucketByID(ctx, bucketID, filterID)
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
 	if err != nil {
-		return fmt.Errorf("bucket not found: %w", err)
+		return err
 	}
 
 	// 1. Delete all objects from storage
@@ -232,6 +290,11 @@ func (s *BucketService) EmptyBucket(ctx context.Context, bucketID string) error 
 		return fmt.Errorf("failed to delete file metadata: %w", err)
 	}
 
+	// Emit metrics for empty/delete (Tier 1/Free)
+	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
+		DeleteRequests: 1,
+	})
+
 	return nil
 }
 
@@ -242,9 +305,9 @@ func (s *BucketService) GetBucketStats(ctx context.Context, bucketID string) (*d
 		filterID = ""
 	}
 
-	bucket, err := s.repo.GetBucketByID(ctx, bucketID, filterID)
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
 	if err != nil {
-		return nil, fmt.Errorf("bucket not found or access denied: %w", err)
+		return nil, err
 	}
 
 	files, err := s.repo.ListFiles(ctx, bucket.ID)
@@ -271,9 +334,9 @@ func (s *BucketService) GetBucketPolicy(ctx context.Context, bucketID string) (*
 		filterID = ""
 	}
 
-	bucket, err := s.repo.GetBucketByID(ctx, bucketID, filterID)
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
 	if err != nil {
-		return nil, fmt.Errorf("bucket not found: %w", err)
+		return nil, err
 	}
 
 	policyStr := ""
@@ -295,13 +358,12 @@ func (s *BucketService) UpdateBucketPolicy(ctx context.Context, bucketID string,
 		filterID = ""
 	}
 
-	bucket, err := s.repo.GetBucketByID(ctx, bucketID, filterID)
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
 	if err != nil {
-		return fmt.Errorf("bucket not found: %w", err)
+		return err
 	}
-
 	// Permission: only owner or admin can update
-	if actorID != fmt.Sprintf("user:%s", bucket.OwnerID) && !IsAdmin(actorID) {
+	if actorID != bucket.OwnerID && !IsAdmin(actorID) {
 		return errors.New("forbidden: only bucket owner or admin can update policy")
 	}
 
@@ -353,9 +415,9 @@ func (s *BucketService) SetBucketVersioning(ctx context.Context, bucketID string
 		filterID = ""
 	}
 
-	bucket, err := s.repo.GetBucketByID(ctx, bucketID, filterID)
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
 	if err != nil {
-		return fmt.Errorf("bucket not found: %w", err)
+		return err
 	}
 
 	// Set versioning in storage layer (MinIO)
@@ -371,6 +433,11 @@ func (s *BucketService) SetBucketVersioning(ctx context.Context, bucketID string
 	if err := s.repo.SetBucketVersioning(ctx, bucketID, status); err != nil {
 		return fmt.Errorf("failed to persist versioning status: %w", err)
 	}
+
+	// Emit metrics for versioning (Tier 1)
+	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
+		PutRequests: 1,
+	})
 
 	return nil
 }
@@ -405,7 +472,7 @@ func (s *BucketService) GetBucketVersioning(ctx context.Context, bucketID string
 	}
 
 	// Verify bucket ownership first
-	_, err := s.repo.GetBucketByID(ctx, bucketID, filterID)
+	_, err := s.resolveBucket(ctx, bucketID, filterID)
 	if err != nil {
 		return nil, err
 	}
@@ -429,7 +496,7 @@ func (s *BucketService) SetBucketLifecycle(ctx context.Context, bucketID string,
 	}
 
 	// Verify bucket ownership first
-	_, err := s.repo.GetBucketByID(ctx, bucketID, filterID)
+	_, err := s.resolveBucket(ctx, bucketID, filterID)
 	if err != nil {
 		return err
 	}
@@ -455,14 +522,431 @@ func (s *BucketService) SetBucketLifecycle(ctx context.Context, bucketID string,
 			return fmt.Errorf("failed to save lifecycle rule: %w", err)
 		}
 	}
+
+	// Emit metrics for lifecycle (Tier 1)
+	// We need bucket info for owner/region
+	if bucket, err := s.resolveBucket(ctx, bucketID, filterID); err == nil {
+		go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
+			PutRequests: 1,
+		})
+	}
+
 	return nil
 }
 
 func (s *BucketService) GetBucketLifecycle(ctx context.Context, bucketID string) ([]domain.LifecycleRule, error) {
-	rules, err := s.repo.GetLifecycleRules(ctx, bucketID)
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	// Verify bucket ownership and resolve name
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
+	if err != nil {
+		return nil, err
+	}
+
+	rules, err := s.repo.GetLifecycleRules(ctx, bucket.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get lifecycle rules: %w", err)
 	}
 
 	return rules, nil
+}
+
+func (s *BucketService) SetBucketBlockPublicAccess(ctx context.Context, bucketID string, input dto.SetBlockPublicAccessInput) error {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
+	if err != nil {
+		return err
+	}
+
+	config := domain.BlockPublicAccess{
+		BlockPublicAcls:       input.BlockPublicAcls,
+		IgnorePublicAcls:      input.IgnorePublicAcls,
+		BlockPublicPolicy:     input.BlockPublicPolicy,
+		RestrictPublicBuckets: input.RestrictPublicBuckets,
+	}
+
+	if input.BlockAll != nil {
+		val := *input.BlockAll
+		config.BlockPublicAcls = val
+		config.IgnorePublicAcls = val
+		config.BlockPublicPolicy = val
+		config.RestrictPublicBuckets = val
+	}
+
+	if err := s.repo.SetBucketBlockPublicAccess(ctx, bucket.ID, config); err != nil {
+		return fmt.Errorf("failed to update block public access: %w", err)
+	}
+
+	// Emit metrics (Tier 1)
+	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
+		PutRequests: 1,
+	})
+
+	return nil
+}
+
+func (s *BucketService) GetBucketCORS(ctx context.Context, bucketID string) (*dto.CORSConfiguration, error) {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	// Verify bucket ownership
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
+	if err != nil {
+		return nil, err
+	}
+
+	cors, err := s.repo.GetBucketCORS(ctx, bucket.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cors configuration: %w", err)
+	}
+
+	if cors == nil {
+		return &dto.CORSConfiguration{CORSRules: []dto.CORSRule{}}, nil
+	}
+
+	output := dto.CORSConfiguration{
+		CORSRules: make([]dto.CORSRule, 0, len(cors.CORSRules)),
+	}
+	for _, r := range cors.CORSRules {
+		output.CORSRules = append(output.CORSRules, dto.CORSRule{
+			AllowedHeaders: r.AllowedHeaders,
+			AllowedMethods: r.AllowedMethods,
+			AllowedOrigins: r.AllowedOrigins,
+			ExposeHeaders:  r.ExposeHeaders,
+			MaxAgeSeconds:  r.MaxAgeSeconds,
+			Test:           r.Test,
+		})
+	}
+
+	return &output, nil
+}
+
+func (s *BucketService) SetBucketCORS(ctx context.Context, bucketID string, input dto.CORSConfiguration) error {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
+	if err != nil {
+		return err
+	}
+
+	cors := &domain.CORSConfiguration{
+		CORSRules: make([]domain.CORSRule, 0, len(input.CORSRules)),
+	}
+	for _, r := range input.CORSRules {
+		cors.CORSRules = append(cors.CORSRules, domain.CORSRule{
+			AllowedHeaders: r.AllowedHeaders,
+			AllowedMethods: r.AllowedMethods,
+			AllowedOrigins: r.AllowedOrigins,
+			ExposeHeaders:  r.ExposeHeaders,
+			MaxAgeSeconds:  r.MaxAgeSeconds,
+			Test:           r.Test,
+		})
+	}
+
+	if err := s.repo.SetBucketCORS(ctx, bucket.ID, cors); err != nil {
+		return fmt.Errorf("failed to save cors configuration: %w", err)
+	}
+
+	// Emit metrics (Tier 1)
+	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
+		PutRequests: 1,
+	})
+
+	return nil
+}
+
+func (s *BucketService) SetBucketEncryption(ctx context.Context, bucketID string, input dto.BucketEncryption) error {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
+	if err != nil {
+		return err
+	}
+
+	encryption := domain.BucketEncryption{
+		Type:             input.Type,
+		BucketKeyEnabled: input.BucketKeyEnabled,
+	}
+
+	if err := s.repo.SetBucketEncryption(ctx, bucket.ID, encryption); err != nil {
+		return fmt.Errorf("failed to save encryption configuration: %w", err)
+	}
+
+	return nil
+}
+
+func (s *BucketService) GetBucketEncryption(ctx context.Context, bucketID string) (*dto.BucketEncryption, error) {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
+	if err != nil {
+		return nil, err
+	}
+
+	encryption, err := s.repo.GetBucketEncryption(ctx, bucket.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get encryption configuration: %w", err)
+	}
+
+	return &dto.BucketEncryption{
+		Type:             encryption.Type,
+		BucketKeyEnabled: encryption.BucketKeyEnabled,
+	}, nil
+}
+
+func (s *BucketService) GetBucketReplication(ctx context.Context, bucketID string) (*dto.ReplicationOutput, error) {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
+	if err != nil {
+		return nil, err
+	}
+
+	repl, err := s.repo.GetBucketReplication(ctx, bucket.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get replication configuration: %w", err)
+	}
+
+	return &dto.ReplicationOutput{Replication: repl}, nil
+}
+
+func (s *BucketService) GetBucketTags(ctx context.Context, bucketID string) (*dto.TagsOutput, error) {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
+	if err != nil {
+		return nil, err
+	}
+
+	tags, err := s.repo.GetBucketTags(ctx, bucket.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get bucket tags: %w", err)
+	}
+
+	dtoTags := make([]dto.Tag, len(tags))
+	for i, t := range tags {
+		dtoTags[i] = dto.Tag{Key: t.Key, Value: t.Value}
+	}
+
+	return &dto.TagsOutput{Tags: dtoTags}, nil
+}
+
+func (s *BucketService) GetBucketNotifications(ctx context.Context, bucketID string) (*dto.NotificationsOutput, error) {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
+	if err != nil {
+		return nil, err
+	}
+
+	notif, err := s.repo.GetBucketNotifications(ctx, bucket.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get notification configuration: %w", err)
+	}
+
+	return &dto.NotificationsOutput{Notifications: notif}, nil
+}
+func (s *BucketService) SetBucketObjectLock(ctx context.Context, bucketID string, input dto.ObjectLockInput) error {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
+	if err != nil {
+		return err
+	}
+
+	enabled := input.Status == "Enabled"
+	if err := s.repo.SetBucketObjectLock(ctx, bucket.ID, enabled); err != nil {
+		return fmt.Errorf("failed to save object lock configuration: %w", err)
+	}
+
+	return nil
+}
+
+func (s *BucketService) GetBucketObjectLock(ctx context.Context, bucketID string) (*dto.ObjectLockOutput, error) {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
+	if err != nil {
+		return nil, err
+	}
+
+	enabled, err := s.repo.GetBucketObjectLock(ctx, bucket.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get object lock configuration: %w", err)
+	}
+
+	return &dto.ObjectLockOutput{Enabled: enabled}, nil
+}
+
+func (s *BucketService) SetBucketReplication(ctx context.Context, bucketID string, input dto.UpdateReplicationInput) error {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
+	if err != nil {
+		return err
+	}
+
+	if err := s.repo.SetBucketReplication(ctx, bucket.ID, input); err != nil {
+		return fmt.Errorf("failed to save replication configuration: %w", err)
+	}
+
+	return nil
+}
+
+func (s *BucketService) SetBucketLogging(ctx context.Context, bucketID string, input dto.UpdateLoggingInput) error {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
+	if err != nil {
+		return err
+	}
+
+	if err := s.repo.SetBucketLogging(ctx, bucket.ID, input); err != nil {
+		return fmt.Errorf("failed to save logging configuration: %w", err)
+	}
+
+	return nil
+}
+
+func (s *BucketService) GetBucketLogging(ctx context.Context, bucketID string) (*dto.LoggingOutput, error) {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
+	if err != nil {
+		return nil, err
+	}
+
+	logging, err := s.repo.GetBucketLogging(ctx, bucket.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get logging configuration: %w", err)
+	}
+
+	if logging == nil {
+		return &dto.LoggingOutput{Status: "Disabled"}, nil
+	}
+
+	m, ok := logging.(map[string]interface{})
+	if !ok {
+		return &dto.LoggingOutput{Status: "Disabled"}, nil
+	}
+
+	output := &dto.LoggingOutput{
+		Status:       "Disabled",
+		TargetBucket: "",
+		TargetPrefix: "",
+	}
+
+	if status, ok := m["status"].(string); ok {
+		output.Status = status
+	}
+	if targetBucket, ok := m["targetBucket"].(string); ok {
+		output.TargetBucket = targetBucket
+	}
+	if targetPrefix, ok := m["targetPrefix"].(string); ok {
+		output.TargetPrefix = targetPrefix
+	}
+
+	return output, nil
+}
+
+func (s *BucketService) SetBucketNotifications(ctx context.Context, bucketID string, input dto.UpdateNotificationsInput) error {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
+	if err != nil {
+		return err
+	}
+
+	if err := s.repo.SetBucketNotifications(ctx, bucket.ID, input); err != nil {
+		return fmt.Errorf("failed to save notifications configuration: %w", err)
+	}
+
+	return nil
+}
+
+func (s *BucketService) SetBucketTags(ctx context.Context, bucketID string, input dto.UpdateTagsInput) error {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
+	if err != nil {
+		return err
+	}
+
+	var domainTags []domain.Tag
+	for _, t := range input.Tags {
+		domainTags = append(domainTags, domain.Tag{
+			Key:   t.Key,
+			Value: t.Value,
+		})
+	}
+
+	if err := s.repo.SetBucketTags(ctx, bucket.ID, domainTags); err != nil {
+		return fmt.Errorf("failed to save tags configuration: %w", err)
+	}
+
+	return nil
 }

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"s3/internal/domain"
 	"s3/internal/infrastructure/dto"
+	"s3/internal/infrastructure/metrics"
 	"sort"
 	"time"
 
@@ -18,16 +19,17 @@ import (
 type PresignService struct {
 	repo      domain.RepositoryPort
 	storage   domain.StoragePort
+	metrics   *metrics.MetricsClient
 	secretKey string
 }
 
-func NewPresignService(repo domain.RepositoryPort, storage domain.StoragePort, secretKey string) *PresignService {
+func NewPresignService(repo domain.RepositoryPort, storage domain.StoragePort, metrics *metrics.MetricsClient, secretKey string) *PresignService {
 	return &PresignService{
 		repo:      repo,
 		storage:   storage,
+		metrics:   metrics,
 		secretKey: secretKey,
 	}
-
 }
 
 // GenerateUploadURL creates a presigned URL for uploading
@@ -74,6 +76,11 @@ func (s *PresignService) GenerateUploadURL(ctx context.Context, input dto.Genera
 	if err := s.repo.SavePresignedURL(ctx, presignedURL); err != nil {
 		return nil, fmt.Errorf("failed to save presigned URL: %w", err)
 	}
+
+	// Emit metrics for Presign URL generation (Tier 2)
+	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
+		HeadRequests: 1,
+	})
 
 	return &dto.GenerateUploadURLOutput{
 		URL:       url,
@@ -147,6 +154,11 @@ func (s *PresignService) GenerateDownloadURL(ctx context.Context, input dto.Gene
 	if err := s.repo.SavePresignedURL(ctx, presignedURL); err != nil {
 		return nil, fmt.Errorf("failed to save presigned URL: %w", err)
 	}
+
+	// Emit metrics for Presign URL generation (Tier 2)
+	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
+		HeadRequests: 1,
+	})
 
 	return &dto.GenerateDownloadURLOutput{
 		URL:       url,
@@ -318,6 +330,11 @@ func (s *PresignService) GenerateMultipartUploadURLs(ctx context.Context, input 
 			return nil, fmt.Errorf("failed to save presigned URL for part %d: %w", partNumber, err)
 		}
 	}
+
+	// Emit metrics for Multipart Presign (Tier 2 x Parts)
+	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
+		HeadRequests: int64(input.Parts),
+	})
 
 	return &dto.GenerateMultipartUploadURLsOutput{
 		UploadID:  uploadID,
@@ -526,4 +543,16 @@ func (s *PresignService) calculateTotalSize(parts []dto.Part) int64 {
 		_ = p
 	}
 	return total
+}
+
+func (s *PresignService) emitMetrics(ctx context.Context, bucketID, ownerID, region string, partial dto.S3IngestRequest) {
+	if s.metrics == nil {
+		return
+	}
+
+	partial.BucketID = bucketID
+	partial.OwnerID = ownerID
+	partial.Region = region
+
+	_ = s.metrics.SendS3Metrics(ctx, partial)
 }

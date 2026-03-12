@@ -22,7 +22,7 @@ type BucketAlreadyExists struct {
 }
 
 // GetBucketVersioning implements domain.StoragePort.
-func (m *MinIOAdapter) GetBucketVersioning(ctx context.Context, bucketName string) (*dto.VersioningOutput, error) {
+func (m *MinIOAdapter) GetBucketVersioning(ctx context.Context, bucketName string) (*domain.VersioningOutput, error) {
 	config, err := m.client.GetBucketVersioning(ctx, bucketName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get versioning: %w", err)
@@ -30,7 +30,7 @@ func (m *MinIOAdapter) GetBucketVersioning(ctx context.Context, bucketName strin
 
 	enabled := config.Status == minio.Enabled
 
-	return &dto.VersioningOutput{
+	return &domain.VersioningOutput{
 		Enabled: enabled,
 		Status:  string(config.Status),
 	}, nil
