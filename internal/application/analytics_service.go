@@ -343,7 +343,6 @@ func (s *AnalyticsService) GetStorageLensReport(ctx context.Context, userID stri
 	if err != nil {
 		return nil, err
 	}
-
 	totalStorage := int64(0)
 	totalObjects := int64(0)
 	activeBuckets := len(buckets)

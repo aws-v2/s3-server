@@ -23,6 +23,7 @@ func (s *SecurityService) AnalyzePosture(ctx context.Context, userID string) (*d
 		return nil, fmt.Errorf("failed to list buckets for security audit: %w", err)
 	}
 
+
 	report := &dto.SecuritySummaryOutput{
 		Score:    100,
 		Findings: []dto.SecurityFinding{},

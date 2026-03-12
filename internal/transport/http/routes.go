@@ -302,6 +302,8 @@ func registerSearchRoutes(v1 *gin.RouterGroup, handler *SearchHandler) {
 
 func registerAnalyticsRoutes(v1 *gin.RouterGroup, handler *AnalyticsHandler) {
 	analytics := v1.Group("/analytics")
+	analytics.Use(middleware.LocalBypassMiddleware())
+	analytics.Use(middleware.ExtractUserIDMiddleware())
 	{
 		// Get storage usage statistics
 		analytics.GET("/storage/usage", handler.GetStorageUsage)
