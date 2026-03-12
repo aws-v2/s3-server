@@ -10,26 +10,28 @@ import (
 )
 
 type AccessPointService struct {
-	repo domain.RepositoryPort
-	net  domain.NetworkPort
+	apRepo     domain.AccessPointRepository
+	bucketRepo domain.BucketRepository
+	net        domain.NetworkPort
 }
 
-func NewAccessPointService(repo domain.RepositoryPort, net domain.NetworkPort) *AccessPointService {
+func NewAccessPointService(apRepo domain.AccessPointRepository, bucketRepo domain.BucketRepository, net domain.NetworkPort) *AccessPointService {
 	return &AccessPointService{
-		repo: repo,
-		net:  net,
+		apRepo:     apRepo,
+		bucketRepo: bucketRepo,
+		net:        net,
 	}
 }
 
 func (s *AccessPointService) resolveBucket(ctx context.Context, idOrName string, filterID string) (domain.Bucket, error) {
 	// Try by ID first
-	bucket, err := s.repo.GetBucketByID(ctx, idOrName, filterID)
+	bucket, err := s.bucketRepo.GetBucketByID(ctx, idOrName, filterID)
 	if err == nil {
 		return bucket, nil
 	}
 
 	// Try by Name as fallback
-	bucket, err = s.repo.GetBucketByName(ctx, idOrName, filterID)
+	bucket, err = s.bucketRepo.GetBucketByName(ctx, idOrName, filterID)
 	if err == nil {
 		return bucket, nil
 	}
@@ -59,7 +61,7 @@ func (s *AccessPointService) CreateAccessPoint(ctx context.Context, bucketID, na
 		UpdatedAt:     time.Now(),
 	}
 
-	if err := s.repo.SaveAccessPoint(ctx, ap); err != nil {
+	if err := s.apRepo.SaveAccessPoint(ctx, ap); err != nil {
 		return nil, err
 	}
 
@@ -78,7 +80,7 @@ func (s *AccessPointService) ListAccessPoints(ctx context.Context, bucketID stri
 		return nil, err
 	}
 
-	aps, err := s.repo.ListAccessPoints(ctx, bucket.ID)
+	aps, err := s.apRepo.ListAccessPoints(ctx, bucket.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +110,7 @@ func (s *AccessPointService) UpdateAccessPointOrigin(ctx context.Context, bucket
 		return nil, err
 	}
 
-	ap, err := s.repo.GetAccessPointByName(ctx, bucket.ID, name)
+	ap, err := s.apRepo.GetAccessPointByName(ctx, bucket.ID, name)
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +119,7 @@ func (s *AccessPointService) UpdateAccessPointOrigin(ctx context.Context, bucket
 	ap.VpcID = vpcID
 	ap.UpdatedAt = time.Now()
 
-	if err := s.repo.UpdateAccessPoint(ctx, ap); err != nil {
+	if err := s.apRepo.UpdateAccessPoint(ctx, ap); err != nil {
 		return nil, err
 	}
 

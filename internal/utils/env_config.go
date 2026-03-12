@@ -5,6 +5,8 @@ import (
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/joho/godotenv"
 )
 
 type Config struct {
@@ -52,6 +54,9 @@ type NATSConfig struct {
 }
 
 func Load() (*Config, error) {
+	// Load .env file
+	_ = godotenv.Load()
+
 	cfg := &Config{
 		DB: DBConfig{
 			Host:            getEnv("POSTGRES_HOST", "localhost"),

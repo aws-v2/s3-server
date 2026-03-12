@@ -18,11 +18,15 @@ import (
 )
 
 type WebhookService struct {
-	repo domain.RepositoryPort
+	webhookRepo domain.WebhookRepository
+	bucketRepo  domain.BucketRepository
 }
 
-func NewWebhookService(repo domain.RepositoryPort) *WebhookService {
-	return &WebhookService{repo: repo}
+func NewWebhookService(webhookRepo domain.WebhookRepository, bucketRepo domain.BucketRepository) *WebhookService {
+	return &WebhookService{
+		webhookRepo: webhookRepo,
+		bucketRepo:  bucketRepo,
+	}
 }
 
 func (s *WebhookService) CreateWebhook(ctx context.Context, input dto.CreateWebhookInput) (*dto.CreateWebhookOutput, error) {
@@ -33,7 +37,7 @@ func (s *WebhookService) CreateWebhook(ctx context.Context, input dto.CreateWebh
 	}
 
 	// Verify bucket ownership
-	_, err := s.repo.GetBucketByID(ctx, input.BucketID, filterID)
+	_, err := s.bucketRepo.GetBucketByID(ctx, input.BucketID, filterID)
 	if err != nil {
 		return nil, fmt.Errorf("bucket not found or access denied: %w", err)
 	}
@@ -56,7 +60,7 @@ func (s *WebhookService) CreateWebhook(ctx context.Context, input dto.CreateWebh
 		UpdatedAt: time.Now(),
 	}
 
-	if err := s.repo.SaveWebhook(ctx, webhook); err != nil {
+	if err := s.webhookRepo.SaveWebhook(ctx, webhook); err != nil {
 		return nil, fmt.Errorf("failed to create webhook: %w", err)
 	}
 
@@ -77,12 +81,12 @@ func (s *WebhookService) ListWebhooks(ctx context.Context, bucketID string) (*dt
 	}
 
 	// Verify bucket ownership
-	_, err := s.repo.GetBucketByID(ctx, bucketID, filterID)
+	_, err := s.bucketRepo.GetBucketByID(ctx, bucketID, filterID)
 	if err != nil {
 		return nil, fmt.Errorf("bucket not found or access denied: %w", err)
 	}
 
-	webhooks, err := s.repo.ListWebhooksByBucket(ctx, bucketID)
+	webhooks, err := s.webhookRepo.ListWebhooksByBucket(ctx, bucketID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list webhooks: %w", err)
 	}
@@ -112,13 +116,13 @@ func (s *WebhookService) GetWebhook(ctx context.Context, webhookID string) (*dto
 		filterID = ""
 	}
 
-	webhook, err := s.repo.GetWebhookByID(ctx, webhookID)
+	webhook, err := s.webhookRepo.GetWebhookByID(ctx, webhookID)
 	if err != nil {
 		return nil, fmt.Errorf("webhook not found: %w", err)
 	}
 
 	// Verify bucket ownership
-	_, err = s.repo.GetBucketByID(ctx, webhook.BucketID, filterID)
+	_, err = s.bucketRepo.GetBucketByID(ctx, webhook.BucketID, filterID)
 	if err != nil {
 		return nil, fmt.Errorf("access denied to webhook: %w", err)
 	}
@@ -143,13 +147,13 @@ func (s *WebhookService) UpdateWebhook(ctx context.Context, webhookID string, in
 		filterID = ""
 	}
 
-	webhook, err := s.repo.GetWebhookByID(ctx, webhookID)
+	webhook, err := s.webhookRepo.GetWebhookByID(ctx, webhookID)
 	if err != nil {
 		return fmt.Errorf("webhook not found: %w", err)
 	}
 
 	// Verify bucket ownership
-	_, err = s.repo.GetBucketByID(ctx, webhook.BucketID, filterID)
+	_, err = s.bucketRepo.GetBucketByID(ctx, webhook.BucketID, filterID)
 	if err != nil {
 		return fmt.Errorf("access denied to update webhook: %w", err)
 	}
@@ -172,7 +176,7 @@ func (s *WebhookService) UpdateWebhook(ctx context.Context, webhookID string, in
 
 	webhook.UpdatedAt = time.Now()
 
-	if err := s.repo.UpdateWebhook(ctx, webhook); err != nil {
+	if err := s.webhookRepo.UpdateWebhook(ctx, webhook); err != nil {
 		return fmt.Errorf("failed to update webhook: %w", err)
 	}
 
@@ -186,18 +190,18 @@ func (s *WebhookService) DeleteWebhook(ctx context.Context, webhookID string) er
 		filterID = ""
 	}
 
-	webhook, err := s.repo.GetWebhookByID(ctx, webhookID)
+	webhook, err := s.webhookRepo.GetWebhookByID(ctx, webhookID)
 	if err != nil {
 		return fmt.Errorf("webhook not found: %w", err)
 	}
 
 	// Verify bucket ownership
-	_, err = s.repo.GetBucketByID(ctx, webhook.BucketID, filterID)
+	_, err = s.bucketRepo.GetBucketByID(ctx, webhook.BucketID, filterID)
 	if err != nil {
 		return fmt.Errorf("access denied to delete webhook: %w", err)
 	}
 
-	if err := s.repo.DeleteWebhook(ctx, webhookID); err != nil {
+	if err := s.webhookRepo.DeleteWebhook(ctx, webhookID); err != nil {
 		return fmt.Errorf("failed to delete webhook: %w", err)
 	}
 	return nil
@@ -210,13 +214,13 @@ func (s *WebhookService) TestWebhook(ctx context.Context, webhookID string) (*dt
 		filterID = ""
 	}
 
-	webhook, err := s.repo.GetWebhookByID(ctx, webhookID)
+	webhook, err := s.webhookRepo.GetWebhookByID(ctx, webhookID)
 	if err != nil {
 		return nil, fmt.Errorf("webhook not found: %w", err)
 	}
 
 	// Verify bucket ownership
-	_, err = s.repo.GetBucketByID(ctx, webhook.BucketID, filterID)
+	_, err = s.bucketRepo.GetBucketByID(ctx, webhook.BucketID, filterID)
 	if err != nil {
 		return nil, fmt.Errorf("access denied to test webhook: %w", err)
 	}
@@ -253,18 +257,18 @@ func (s *WebhookService) GetWebhookDeliveries(ctx context.Context, webhookID str
 		filterID = ""
 	}
 
-	webhook, err := s.repo.GetWebhookByID(ctx, webhookID)
+	webhook, err := s.webhookRepo.GetWebhookByID(ctx, webhookID)
 	if err != nil {
 		return nil, fmt.Errorf("webhook not found: %w", err)
 	}
 
 	// Verify bucket ownership
-	_, err = s.repo.GetBucketByID(ctx, webhook.BucketID, filterID)
+	_, err = s.bucketRepo.GetBucketByID(ctx, webhook.BucketID, filterID)
 	if err != nil {
 		return nil, fmt.Errorf("access denied to view deliveries: %w", err)
 	}
 
-	deliveries, err := s.repo.ListWebhookDeliveries(ctx, webhookID, 50)
+	deliveries, err := s.webhookRepo.ListWebhookDeliveries(ctx, webhookID, 50)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get deliveries: %w", err)
 	}
@@ -288,7 +292,7 @@ func (s *WebhookService) GetWebhookDeliveries(ctx context.Context, webhookID str
 }
 
 func (s *WebhookService) TriggerWebhook(ctx context.Context, bucketID, event string, payload interface{}) {
-	webhooks, err := s.repo.ListWebhooksByBucket(ctx, bucketID)
+	webhooks, err := s.webhookRepo.ListWebhooksByBucket(ctx, bucketID)
 	if err != nil {
 		return
 	}
@@ -351,7 +355,7 @@ func (s *WebhookService) deliverWebhook(ctx context.Context, webhook *domain.Web
 		delivery.ErrorMessage = fmt.Sprintf("HTTP %d", resp.StatusCode)
 	}
 
-	s.repo.SaveWebhookDelivery(ctx, delivery)
+	s.webhookRepo.SaveWebhookDelivery(ctx, delivery)
 	return delivery, nil
 }
 
@@ -365,7 +369,7 @@ func (s *WebhookService) saveFailedDelivery(ctx context.Context, webhookID, even
 		ErrorMessage: errorMsg,
 		DeliveredAt:  time.Now(),
 	}
-	s.repo.SaveWebhookDelivery(ctx, delivery)
+	s.webhookRepo.SaveWebhookDelivery(ctx, delivery)
 	return delivery
 }
 

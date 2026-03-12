@@ -11,18 +11,18 @@ import (
 
 // HealthService checks system and storage health.
 type HealthService struct {
-	repo    domain.RepositoryPort
+	repo    domain.HealthRepository
 	storage domain.StoragePort
-	system domain.SystemPort
+	system  domain.SystemPort
 }
 
 
 // Constructor
-func NewHealthService(repo domain.RepositoryPort, storage domain.StoragePort, system domain.SystemPort) *HealthService {
+func NewHealthService(repo domain.HealthRepository, storage domain.StoragePort, system domain.SystemPort) *HealthService {
 	return &HealthService{
 		repo:    repo,
 		storage: storage,
-		system:system,
+		system:  system,
 	}
 }
 

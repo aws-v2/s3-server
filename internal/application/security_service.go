@@ -8,17 +8,17 @@ import (
 )
 
 type SecurityService struct {
-	repo domain.RepositoryPort
+	bucketRepo domain.BucketRepository
 }
 
-func NewSecurityService(repo domain.RepositoryPort) *SecurityService {
+func NewSecurityService(bucketRepo domain.BucketRepository) *SecurityService {
 	return &SecurityService{
-		repo: repo,
+		bucketRepo: bucketRepo,
 	}
 }
 
 func (s *SecurityService) AnalyzePosture(ctx context.Context, userID string) (*dto.SecuritySummaryOutput, error) {
-	buckets, err := s.repo.ListBucketsByOwner(ctx, userID)
+	buckets, err := s.bucketRepo.ListBucketsByOwner(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list buckets for security audit: %w", err)
 	}

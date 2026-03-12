@@ -15,14 +15,16 @@ import (
 
 type UploadService struct {
 	storage    domain.StoragePort
-	repository domain.RepositoryPort
+	bucketRepo domain.BucketRepository
+	fileRepo   domain.FileRepository
 	metrics    *metrics.MetricsClient
 }
 
-func NewUploadService(storage domain.StoragePort, repository domain.RepositoryPort, metrics *metrics.MetricsClient) *UploadService {
+func NewUploadService(storage domain.StoragePort, bucketRepo domain.BucketRepository, fileRepo domain.FileRepository, metrics *metrics.MetricsClient) *UploadService {
 	return &UploadService{
 		storage:    storage,
-		repository: repository,
+		bucketRepo: bucketRepo,
+		fileRepo:   fileRepo,
 		metrics:    metrics,
 	}
 }
@@ -72,13 +74,13 @@ type UploadFileOutput struct {
 
 func (s *UploadService) resolveBucket(ctx context.Context, idOrName string, filterID string) (domain.Bucket, error) {
 	// Try by ID first
-	bucket, err := s.repository.GetBucketByID(ctx, idOrName, filterID)
+	bucket, err := s.bucketRepo.GetBucketByID(ctx, idOrName, filterID)
 	if err == nil {
 		return bucket, nil
 	}
 
 	// Try by Name as fallback
-	bucket, err = s.repository.GetBucketByName(ctx, idOrName, filterID)
+	bucket, err = s.bucketRepo.GetBucketByName(ctx, idOrName, filterID)
 	if err == nil {
 		return bucket, nil
 	}
@@ -140,7 +142,7 @@ func (s *UploadService) UploadFile(ctx context.Context, input UploadFileInput) (
 			CreatedAt: time.Now(),
 		}
 
-		err = s.repository.SaveFile(ctx, file)
+		err = s.fileRepo.SaveFile(ctx, file)
 		if err != nil {
 			return nil, fmt.Errorf("failed to save file metadata for %s: %w", f.Name, err)
 		}
@@ -206,7 +208,7 @@ func (s *UploadService) CreateFolder(ctx context.Context, bucketID, folderName s
 		CreatedAt: time.Now(),
 	}
 
-	if err := s.repository.SaveFile(ctx, file); err != nil {
+	if err := s.fileRepo.SaveFile(ctx, file); err != nil {
 		return fmt.Errorf("failed to save folder metadata: %w", err)
 	}
 
@@ -243,11 +245,11 @@ func (s *UploadService) GetFileInfo(ctx context.Context, bucketID, fileID string
 	})
 
 	// Get file from DB (try ID first, then Key)
-	file, err := s.repository.GetFileByID(ctx, fileID)
+	file, err := s.fileRepo.GetFileByID(ctx, fileID)
 	if err != nil {
 		// Fallback to Key
 		var errKey error
-		file, errKey = s.repository.GetFileByKey(ctx, bucket.ID, fileID)
+		file, errKey = s.fileRepo.GetFileByKey(ctx, bucket.ID, fileID)
 		if errKey != nil {
 			return nil, fmt.Errorf("file not found: %w", err)
 		}
@@ -288,7 +290,7 @@ func (s *UploadService) ListFiles(ctx context.Context, bucketName string) ([]dto
 	})
 
 	// Get files from DB using bucket ID
-	files, err := s.repository.ListFiles(ctx, bucket.ID)
+	files, err := s.fileRepo.ListFiles(ctx, bucket.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list files: %w", err)
 	}
@@ -323,7 +325,7 @@ func (s *UploadService) DownloadFile(ctx context.Context, bucketId, fileID strin
 	}
 
 	// Get file metadata
-	file, err := s.repository.GetFileByID(ctx, fileID)
+	file, err := s.fileRepo.GetFileByID(ctx, fileID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("file not found: %w", err)
 	}
@@ -369,7 +371,7 @@ func (s *UploadService) UpdateFileMetadata(ctx context.Context, bucketID, fileID
 		return nil, err
 	}
 
-	file, err := s.repository.GetFileByID(ctx, fileID)
+	file, err := s.fileRepo.GetFileByID(ctx, fileID)
 	if err != nil {
 		return nil, fmt.Errorf("file not found: %w", err)
 	}
@@ -380,7 +382,7 @@ func (s *UploadService) UpdateFileMetadata(ctx context.Context, bucketID, fileID
 
 	file.Metadata = input.Metadata
 
-	if err := s.repository.UpdateFile(ctx, file); err != nil {
+	if err := s.fileRepo.UpdateFile(ctx, file); err != nil {
 		return nil, fmt.Errorf("failed to update metadata: %w", err)
 	}
 
@@ -417,7 +419,7 @@ func (s *UploadService) CopyFile(ctx context.Context, sourceBucketID, fileID str
 		return nil, err
 	}
 
-	file, err := s.repository.GetFileByID(ctx, fileID)
+	file, err := s.fileRepo.GetFileByID(ctx, fileID)
 	if err != nil {
 		return nil, fmt.Errorf("file not found: %w", err)
 	}
@@ -447,7 +449,7 @@ func (s *UploadService) CopyFile(ctx context.Context, sourceBucketID, fileID str
 		CreatedAt: time.Now(),
 	}
 
-	if err := s.repository.SaveFile(ctx, newFile); err != nil {
+	if err := s.fileRepo.SaveFile(ctx, newFile); err != nil {
 		return nil, fmt.Errorf("failed to save file metadata: %w", err)
 	}
 
@@ -487,7 +489,7 @@ func (s *UploadService) MoveFile(ctx context.Context, sourceBucketName, fileID s
 		return nil, err
 	}
 
-	file, err := s.repository.GetFileByID(ctx, fileID)
+	file, err := s.fileRepo.GetFileByID(ctx, fileID)
 	if err != nil {
 		return nil, fmt.Errorf("file not found: %w", err)
 	}
@@ -515,7 +517,7 @@ func (s *UploadService) MoveFile(ctx context.Context, sourceBucketName, fileID s
 	file.BucketID = destBucket.ID
 	file.Key = newKey
 
-	if err := s.repository.UpdateFile(ctx, file); err != nil {
+	if err := s.fileRepo.UpdateFile(ctx, file); err != nil {
 		return nil, fmt.Errorf("failed to update file metadata: %w", err)
 	}
 
