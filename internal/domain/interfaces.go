@@ -148,6 +148,11 @@ type RepositoryPort interface {
 	SetBucketLogging(ctx context.Context, bucketID string, logging interface{}) error
 	SetBucketNotifications(ctx context.Context, bucketID string, notifications interface{}) error
 	SetBucketTags(ctx context.Context, bucketID string, tags []Tag) error
+
+	// Storage Lens
+	SaveStorageLensSnapshot(ctx context.Context, date time.Time, userID string, totalBytes, objectCount int64, activeBuckets int, distribution map[string]int64) error
+	GetStorageLensSnapshots(ctx context.Context, userID string, startDate, endDate time.Time) ([]StorageLensSnapshot, error)
+	GetStorageClassDistribution(ctx context.Context, userID string) (map[string]int64, error)
 }
 
 type Logger interface {

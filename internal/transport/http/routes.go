@@ -326,6 +326,9 @@ func registerAnalyticsRoutes(v1 *gin.RouterGroup, handler *AnalyticsHandler) {
 
 		// Get API usage statistics
 		analytics.GET("/api/usage", handler.GetAPIUsage)
+
+		// Storage Lens
+		analytics.GET("/storage/lens", handler.GetStorageLensData)
 	}
 }
 
