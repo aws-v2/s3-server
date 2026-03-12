@@ -276,6 +276,7 @@ func main() {
 	analyticsService := application.NewAnalyticsService(postgresRepo)
 	multipartService := application.NewMultipartService(postgresRepo, minioAdapter, metricsClient)
 	accessPointService := application.NewAccessPointService(postgresRepo, natsAdapter)
+	securityService := application.NewSecurityService(postgresRepo)
 
 	// 3. Initialize Transport Layer (HTTP)
 	log.Println("Initializing HTTP handlers...")
@@ -291,6 +292,7 @@ func main() {
 		Analytics:   http.NewAnalyticsHandler(analyticsService), // TODO: implement later
 		Multipart:   http.NewMultipartHandler(multipartService), // TODO: implement later
 		AccessPoint: http.NewAccessPointHandler(accessPointService),
+		Security:    http.NewSecurityHandler(securityService),
 		// Auth:         http.NewAuthHandler(authService),           // JWT authentication handler
 		Validator:    iamValidator, // IAM/API Key validator
 		JWTValidator: nil,          // JWT validator removed

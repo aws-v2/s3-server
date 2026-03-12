@@ -137,6 +137,7 @@ type RepositoryPort interface {
 	// New Configurations
 	SetBucketEncryption(ctx context.Context, bucketID string, encryption BucketEncryption) error
 	GetBucketEncryption(ctx context.Context, bucketID string) (BucketEncryption, error)
+	ListBucketsByOwner(ctx context.Context, ownerID string) ([]Bucket, error)
 	GetBucketReplication(ctx context.Context, bucketID string) (interface{}, error)
 	GetBucketTags(ctx context.Context, bucketID string) ([]Tag, error)
 	GetBucketNotifications(ctx context.Context, bucketID string) (interface{}, error)
