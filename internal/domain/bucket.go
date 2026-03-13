@@ -55,8 +55,16 @@ type CORSRule struct {
 	Test           string   `json:"test,omitempty"` // For the user's specific "test" payload
 }
 
-// Example domain method — pure logic, no SDK
 func (b *Bucket) CanStore(size int64) bool {
 	// limit max bucket size or apply some quota logic
 	return size < 5_000_000_000 // 5GB
+}
+
+type StorageLensSnapshot struct {
+	Date                     time.Time        `json:"date"`
+	UserID                   string           `json:"user_id"`
+	TotalBytes               int64            `json:"total_bytes"`
+	ObjectCount              int64            `json:"object_count"`
+	ActiveBuckets            int              `json:"active_buckets"`
+	StorageClassDistribution map[string]int64 `json:"storage_class_distribution"`
 }

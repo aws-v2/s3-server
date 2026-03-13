@@ -12,12 +12,14 @@ import (
 )
 
 type SearchService struct {
-	repo domain.RepositoryPort
+	searchRepo domain.SearchRepository
+	bucketRepo domain.BucketRepository
 }
 
-func NewSearchService(repo domain.RepositoryPort) *SearchService {
+func NewSearchService(searchRepo domain.SearchRepository, bucketRepo domain.BucketRepository) *SearchService {
 	return &SearchService{
-		repo: repo,
+		searchRepo: searchRepo,
+		bucketRepo: bucketRepo,
 	}
 }
 
@@ -30,12 +32,12 @@ func (s *SearchService) SearchFiles(ctx context.Context, input dto.SearchFilesIn
 	}
 
 	// Verify bucket ownership
-	_, err := s.repo.GetBucketByID(ctx, input.BucketID, filterID)
+	_, err := s.bucketRepo.GetBucketByID(ctx, input.BucketID, filterID)
 	if err != nil {
 		return nil, fmt.Errorf("bucket not found or access denied: %w", err)
 	}
 
-	files, err := s.repo.SearchFilesByName(ctx, input.BucketID, input.Query, input.Limit)
+	files, err := s.searchRepo.SearchFilesByName(ctx, input.BucketID, input.Query, input.Limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search files: %w", err)
 	}
@@ -71,12 +73,12 @@ func (s *SearchService) SearchByMetadata(ctx context.Context, input dto.SearchBy
 	}
 
 	// Verify bucket ownership
-	_, err := s.repo.GetBucketByID(ctx, input.BucketID, filterID)
+	_, err := s.bucketRepo.GetBucketByID(ctx, input.BucketID, filterID)
 	if err != nil {
 		return nil, fmt.Errorf("bucket not found or access denied: %w", err)
 	}
 
-	files, err := s.repo.SearchFilesByMetadata(ctx, input.BucketID, input.Metadata, input.Limit)
+	files, err := s.searchRepo.SearchFilesByMetadata(ctx, input.BucketID, input.Metadata, input.Limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search by metadata: %w", err)
 	}
@@ -109,12 +111,12 @@ func (s *SearchService) SearchByTags(ctx context.Context, input dto.SearchByTags
 	}
 
 	// Verify bucket ownership
-	_, err := s.repo.GetBucketByID(ctx, input.BucketID, filterID)
+	_, err := s.bucketRepo.GetBucketByID(ctx, input.BucketID, filterID)
 	if err != nil {
 		return nil, fmt.Errorf("bucket not found or access denied: %w", err)
 	}
 
-	files, err := s.repo.SearchFilesByTags(ctx, input.BucketID, input.Tags, input.Limit)
+	files, err := s.searchRepo.SearchFilesByTags(ctx, input.BucketID, input.Tags, input.Limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search by tags: %w", err)
 	}
@@ -164,12 +166,12 @@ func (s *SearchService) AdvancedSearch(ctx context.Context, input dto.AdvancedSe
 	}
 
 	// Verify bucket ownership
-	_, err := s.repo.GetBucketByID(ctx, input.BucketID, filterID)
+	_, err := s.bucketRepo.GetBucketByID(ctx, input.BucketID, filterID)
 	if err != nil {
 		return nil, fmt.Errorf("bucket not found or access denied: %w", err)
 	}
 
-	files, err := s.repo.AdvancedSearchFiles(ctx, input)
+	files, err := s.searchRepo.AdvancedSearchFiles(ctx, input)
 	if err != nil {
 		return nil, fmt.Errorf("failed to perform advanced search: %w", err)
 	}
@@ -206,12 +208,12 @@ func (s *SearchService) GetSearchSuggestions(ctx context.Context, input dto.Sear
 	}
 
 	// Verify bucket ownership
-	_, err := s.repo.GetBucketByID(ctx, input.BucketID, filterID)
+	_, err := s.bucketRepo.GetBucketByID(ctx, input.BucketID, filterID)
 	if err != nil {
 		return nil, fmt.Errorf("bucket not found or access denied: %w", err)
 	}
 
-	suggestions, err := s.repo.GetSearchSuggestions(ctx, input.BucketID, input.Query, input.Limit)
+	suggestions, err := s.searchRepo.GetSearchSuggestions(ctx, input.BucketID, input.Query, input.Limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get suggestions: %w", err)
 	}
@@ -223,7 +225,7 @@ func (s *SearchService) GetSearchSuggestions(ctx context.Context, input dto.Sear
 
 // GetSearchHistory gets search history
 func (s *SearchService) GetSearchHistory(ctx context.Context, input dto.SearchHistoryInput) (*dto.SearchHistoryOutput, error) {
-	history, err := s.repo.GetSearchHistory(ctx, input.Limit)
+	history, err := s.searchRepo.GetSearchHistory(ctx, input.Limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get search history: %w", err)
 	}
@@ -254,7 +256,7 @@ func (s *SearchService) SaveSearch(ctx context.Context, input dto.SaveSearchInpu
 		UpdatedAt:   time.Now(),
 	}
 
-	if err := s.repo.SaveSearchQuery(ctx, savedSearch); err != nil {
+	if err := s.searchRepo.SaveSearchQuery(ctx, savedSearch); err != nil {
 		return nil, fmt.Errorf("failed to save search: %w", err)
 	}
 
@@ -272,7 +274,7 @@ func (s *SearchService) saveSearchHistory(ctx context.Context, query string, res
 		Results:   results,
 		Timestamp: time.Now(),
 	}
-	s.repo.SaveSearchHistory(ctx, history)
+	s.searchRepo.SaveSearchHistory(ctx, history)
 }
 
 func calculateRelevance(key, query string) float64 {

@@ -16,13 +16,27 @@ import (
 )
 
 type MultipartService struct {
-	repo    domain.RepositoryPort
-	storage domain.StoragePort
-	metrics *metrics.MetricsClient
+	multipartRepo domain.MultipartRepository
+	bucketRepo    domain.BucketRepository
+	fileRepo      domain.FileRepository
+	storage       domain.StoragePort
+	metrics       *metrics.MetricsClient
 }
 
-func NewMultipartService(repo domain.RepositoryPort, storage domain.StoragePort, metrics *metrics.MetricsClient) *MultipartService {
-	return &MultipartService{repo: repo, storage: storage, metrics: metrics}
+func NewMultipartService(
+	multipartRepo domain.MultipartRepository,
+	bucketRepo domain.BucketRepository,
+	fileRepo domain.FileRepository,
+	storage domain.StoragePort,
+	metrics *metrics.MetricsClient,
+) *MultipartService {
+	return &MultipartService{
+		multipartRepo: multipartRepo,
+		bucketRepo:    bucketRepo,
+		fileRepo:      fileRepo,
+		storage:       storage,
+		metrics:       metrics,
+	}
 }
 
 func (s *MultipartService) InitiateMultipartUpload(ctx context.Context, input dto.InitiateMultipartUploadInput) (*dto.InitiateMultipartUploadOutput, error) {
@@ -37,7 +51,7 @@ func (s *MultipartService) InitiateMultipartUpload(ctx context.Context, input dt
 		UpdatedAt: time.Now(),
 	}
 
-	if err := s.repo.SaveMultipartUpload(ctx, upload); err != nil {
+	if err := s.multipartRepo.SaveMultipartUpload(ctx, upload); err != nil {
 		return nil, fmt.Errorf("failed to initiate upload: %w", err)
 	}
 
@@ -48,7 +62,7 @@ func (s *MultipartService) InitiateMultipartUpload(ctx context.Context, input dt
 	if IsAdmin(actor.ID) {
 		filterID = ""
 	}
-	if bucket, err := s.repo.GetBucketByID(ctx, input.BucketID, filterID); err == nil {
+	if bucket, err := s.bucketRepo.GetBucketByID(ctx, input.BucketID, filterID); err == nil {
 		go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
 			PutRequests: 1,
 		})
@@ -63,7 +77,7 @@ func (s *MultipartService) InitiateMultipartUpload(ctx context.Context, input dt
 }
 
 func (s *MultipartService) UploadPart(ctx context.Context, input dto.UploadPartInput) (*dto.UploadPartOutput, error) {
-	upload, err := s.repo.GetMultipartUploadByUploadID(ctx, input.UploadID)
+	upload, err := s.multipartRepo.GetMultipartUploadByUploadID(ctx, input.UploadID)
 	if err != nil {
 		return nil, fmt.Errorf("upload not found: %w", err)
 	}
@@ -78,7 +92,7 @@ func (s *MultipartService) UploadPart(ctx context.Context, input dto.UploadPartI
 		filterID = ""
 	}
 
-	bucket, err := s.repo.GetBucketByID(ctx, input.BucketID, filterID)
+	bucket, err := s.bucketRepo.GetBucketByID(ctx, input.BucketID, filterID)
 	if err != nil {
 		return nil, fmt.Errorf("bucket not found: %w", err)
 	}
@@ -104,7 +118,7 @@ func (s *MultipartService) UploadPart(ctx context.Context, input dto.UploadPartI
 	upload.Parts = append(upload.Parts, part)
 	upload.UpdatedAt = time.Now()
 
-	if err := s.repo.UpdateMultipartUpload(ctx, upload); err != nil {
+	if err := s.multipartRepo.UpdateMultipartUpload(ctx, upload); err != nil {
 		return nil, fmt.Errorf("failed to update upload: %w", err)
 	}
 
@@ -122,7 +136,7 @@ func (s *MultipartService) UploadPart(ctx context.Context, input dto.UploadPartI
 }
 
 func (s *MultipartService) CompleteMultipartUpload(ctx context.Context, input dto.CompleteMultipartUploadInput) (*dto.CompleteMultipartUploadOutput, error) {
-	upload, err := s.repo.GetMultipartUploadByUploadID(ctx, input.UploadID)
+	upload, err := s.multipartRepo.GetMultipartUploadByUploadID(ctx, input.UploadID)
 	if err != nil {
 		return nil, fmt.Errorf("upload not found: %w", err)
 	}
@@ -133,7 +147,7 @@ func (s *MultipartService) CompleteMultipartUpload(ctx context.Context, input dt
 		filterID = ""
 	}
 
-	bucket, err := s.repo.GetBucketByID(ctx, input.BucketID, filterID)
+	bucket, err := s.bucketRepo.GetBucketByID(ctx, input.BucketID, filterID)
 	if err != nil {
 		return nil, fmt.Errorf("bucket not found: %w", err)
 	}
@@ -190,7 +204,7 @@ func (s *MultipartService) CompleteMultipartUpload(ctx context.Context, input dt
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
-	s.repo.SaveFile(ctx, file)
+	s.fileRepo.SaveFile(ctx, file)
 
 	// Clean up parts
 	for _, part := range upload.Parts {
@@ -201,7 +215,7 @@ func (s *MultipartService) CompleteMultipartUpload(ctx context.Context, input dt
 	// Update upload status
 	upload.Status = "completed"
 	upload.UpdatedAt = time.Now()
-	s.repo.UpdateMultipartUpload(ctx, upload)
+	s.multipartRepo.UpdateMultipartUpload(ctx, upload)
 
 	// Emit metrics for Complete (Tier 1)
 	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
@@ -223,12 +237,12 @@ func (s *MultipartService) AbortMultipartUpload(ctx context.Context, bucketID, u
 		filterID = ""
 	}
 
-	upload, err := s.repo.GetMultipartUploadByUploadID(ctx, uploadID)
+	upload, err := s.multipartRepo.GetMultipartUploadByUploadID(ctx, uploadID)
 	if err != nil {
 		return fmt.Errorf("upload not found: %w", err)
 	}
 
-	bucket, err := s.repo.GetBucketByID(ctx, bucketID, filterID)
+	bucket, err := s.bucketRepo.GetBucketByID(ctx, bucketID, filterID)
 	if err != nil {
 		return fmt.Errorf("bucket not found: %w", err)
 	}
@@ -242,7 +256,7 @@ func (s *MultipartService) AbortMultipartUpload(ctx context.Context, bucketID, u
 	// Update status
 	upload.Status = "aborted"
 	upload.UpdatedAt = time.Now()
-	s.repo.UpdateMultipartUpload(ctx, upload)
+	s.multipartRepo.UpdateMultipartUpload(ctx, upload)
 
 	// Emit metrics for Abort (DeleteRequest)
 	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
@@ -253,7 +267,7 @@ func (s *MultipartService) AbortMultipartUpload(ctx context.Context, bucketID, u
 }
 
 func (s *MultipartService) ListParts(ctx context.Context, bucketID, uploadID string) (*dto.ListPartsOutput, error) {
-	upload, err := s.repo.GetMultipartUploadByUploadID(ctx, uploadID)
+	upload, err := s.multipartRepo.GetMultipartUploadByUploadID(ctx, uploadID)
 	if err != nil {
 		return nil, fmt.Errorf("upload not found: %w", err)
 	}
@@ -288,7 +302,7 @@ func (s *MultipartService) emitMetrics(ctx context.Context, bucketID, ownerID, r
 }
 
 func (s *MultipartService) ListMultipartUploads(ctx context.Context, bucketID string) (*dto.ListMultipartUploadsOutput, error) {
-	uploads, err := s.repo.ListMultipartUploadsByBucket(ctx, bucketID)
+	uploads, err := s.multipartRepo.ListMultipartUploadsByBucket(ctx, bucketID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list uploads: %w", err)
 	}

@@ -17,9 +17,11 @@ import (
 
 // BucketService provides business logic for managing buckets.
 type BucketService struct {
-	repo    domain.RepositoryPort
-	storage domain.StoragePort
-	metrics *metrics.MetricsClient
+	bucketRepo domain.BucketRepository
+	fileRepo   domain.FileRepository
+	policyRepo domain.PolicyRepository
+	storage    domain.StoragePort
+	metrics    *metrics.MetricsClient
 }
 
 type BucketAlreadyExists struct {
@@ -31,11 +33,19 @@ func (e *BucketAlreadyExists) Error() string {
 }
 
 // NewBucketService creates a new instance of BucketService.
-func NewBucketService(repo domain.RepositoryPort, storage domain.StoragePort, metrics *metrics.MetricsClient) *BucketService {
+func NewBucketService(
+	repo domain.BucketRepository,
+	fileRepo domain.FileRepository,
+	policyRepo domain.PolicyRepository,
+	storage domain.StoragePort,
+	metrics *metrics.MetricsClient,
+) *BucketService {
 	return &BucketService{
-		repo:    repo,
-		storage: storage,
-		metrics: metrics,
+		bucketRepo: repo,
+		fileRepo:   fileRepo,
+		policyRepo: policyRepo,
+		storage:    storage,
+		metrics:    metrics,
 	}
 }
 
@@ -45,7 +55,7 @@ func (s *BucketService) CreateBucket(ctx context.Context, input dto.CreateBucket
 	}
 
 	// Check if logical name already exists for this user
-	existing, err := s.repo.GetBucketByName(ctx, input.Name, input.OwnerId)
+	existing, err := s.bucketRepo.GetBucketByName(ctx, input.Name, input.OwnerId)
 	if err == nil && existing.ID != "" {
 		return nil, &BucketAlreadyExists{Name: input.Name}
 	}
@@ -104,7 +114,7 @@ func (s *BucketService) CreateBucket(ctx context.Context, input dto.CreateBucket
 	}
 
 	// Save metadata in repository
-	bucketObject, err := s.repo.SaveBucket(ctx, bucket)
+	bucketObject, err := s.bucketRepo.SaveBucket(ctx, bucket)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save bucket metadata: %w", err)
 	}
@@ -138,13 +148,13 @@ func (s *BucketService) emitMetrics(ctx context.Context, bucketID, ownerID, regi
 
 func (s *BucketService) resolveBucket(ctx context.Context, idOrName string, filterID string) (domain.Bucket, error) {
 	// Try by ID first
-	bucket, err := s.repo.GetBucketByID(ctx, idOrName, filterID)
+	bucket, err := s.bucketRepo.GetBucketByID(ctx, idOrName, filterID)
 	if err == nil {
 		return bucket, nil
 	}
 
 	// Try by Name as fallback
-	bucket, err = s.repo.GetBucketByName(ctx, idOrName, filterID)
+	bucket, err = s.bucketRepo.GetBucketByName(ctx, idOrName, filterID)
 	if err == nil {
 		return bucket, nil
 	}
@@ -185,8 +195,7 @@ func (s *BucketService) ListBuckets(ctx context.Context) ([]domain.Bucket, error
 	if IsAdmin(actor.ID) {
 		filterID = ""
 	}
-	fmt.Printf("-------------------*-%s-*------------", actor)
-	buckets, err := s.repo.ListBuckets(ctx, filterID)
+	buckets, err := s.bucketRepo.ListBuckets(ctx, filterID)
 	if err == nil {
 		// Emit metrics for List (Tier 2) - Note: This is an account-level list, but we can log it
 		// For simplicity, we'll skip per-bucket metrics here unless a specific bucket was requested
@@ -214,7 +223,7 @@ func (s *BucketService) UpdateBucket(ctx context.Context, bucketID string, input
 	// If you want to rename in storage: error := s.storage.RenameBucket(ctx, bucket.StorageName, ...)
 	// But it's better to keep physical names stable.
 
-	updated, err := s.repo.UpdateBucket(ctx, &bucket, filterID)
+	updated, err := s.bucketRepo.UpdateBucket(ctx, &bucket, filterID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update bucket: %w", err)
 	}
@@ -238,7 +247,7 @@ func (s *BucketService) DeleteBucket(ctx context.Context, bucketID string) error
 		filterID = ""
 	}
 
-	files, err := s.repo.ListFiles(ctx, bucketID)
+	files, err := s.fileRepo.ListFiles(ctx, bucketID)
 	if err != nil {
 		return fmt.Errorf("failed to check files: %w", err)
 	}
@@ -255,7 +264,7 @@ func (s *BucketService) DeleteBucket(ctx context.Context, bucketID string) error
 
 		return fmt.Errorf("failed to delete from storage: %w", err)
 	}
-	if err := s.repo.DeleteBucket(ctx, bucketID); err != nil {
+	if err := s.bucketRepo.DeleteBucket(ctx, bucketID); err != nil {
 
 		return fmt.Errorf("failed to delete bucket: %w", err)
 	}
@@ -286,7 +295,7 @@ func (s *BucketService) EmptyBucket(ctx context.Context, bucketID string) error 
 	}
 
 	// 2. Delete all file metadata from repository
-	if err := s.repo.DeleteFilesByBucket(ctx, bucketID); err != nil {
+	if err := s.fileRepo.DeleteFilesByBucket(ctx, bucketID); err != nil {
 		return fmt.Errorf("failed to delete file metadata: %w", err)
 	}
 
@@ -310,7 +319,7 @@ func (s *BucketService) GetBucketStats(ctx context.Context, bucketID string) (*d
 		return nil, err
 	}
 
-	files, err := s.repo.ListFiles(ctx, bucket.ID)
+	files, err := s.fileRepo.ListFiles(ctx, bucket.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get files: %w", err)
 	}
@@ -398,12 +407,12 @@ func (s *BucketService) UpdateBucketPolicy(ctx context.Context, bucketID string,
 	// set and save; increment version
 	bucket.Policy = &policy
 	bucket.UpdatedAt = time.Now()
-	if err := s.repo.IncrementPolicyVersionAndUpdateBucket(ctx, &bucket); err != nil {
+	if err := s.policyRepo.IncrementPolicyVersionAndUpdateBucket(ctx, &bucket); err != nil {
 		return fmt.Errorf("failed to save policy: %w", err)
 	}
 
 	// audit / history - optional
-	_ = s.repo.AppendPolicyHistory(ctx, bucketID, &policy, actorID)
+	_ = s.policyRepo.AppendPolicyHistory(ctx, bucketID, &policy, actorID)
 
 	return nil
 }
@@ -430,7 +439,7 @@ func (s *BucketService) SetBucketVersioning(ctx context.Context, bucketID string
 	if enabled {
 		status = domain.VersioningEnabled
 	}
-	if err := s.repo.SetBucketVersioning(ctx, bucketID, status); err != nil {
+	if err := s.bucketRepo.SetBucketVersioning(ctx, bucketID, status); err != nil {
 		return fmt.Errorf("failed to persist versioning status: %w", err)
 	}
 
@@ -478,7 +487,7 @@ func (s *BucketService) GetBucketVersioning(ctx context.Context, bucketID string
 	}
 
 	// Get versioning status from database
-	status, err := s.repo.GetBucketVersioning(ctx, bucketID)
+	status, err := s.bucketRepo.GetBucketVersioning(ctx, bucketID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get versioning status: %w", err)
 	}
@@ -518,7 +527,7 @@ func (s *BucketService) SetBucketLifecycle(ctx context.Context, bucketID string,
 			return fmt.Errorf("failed to marshal rule: %w", err)
 		}
 
-		if err := s.repo.UpsertLifecycleRule(ctx, bucketID, ruleJSON); err != nil {
+		if err := s.bucketRepo.UpsertLifecycleRule(ctx, bucketID, ruleJSON); err != nil {
 			return fmt.Errorf("failed to save lifecycle rule: %w", err)
 		}
 	}
@@ -547,7 +556,7 @@ func (s *BucketService) GetBucketLifecycle(ctx context.Context, bucketID string)
 		return nil, err
 	}
 
-	rules, err := s.repo.GetLifecycleRules(ctx, bucket.ID)
+	rules, err := s.bucketRepo.GetLifecycleRules(ctx, bucket.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get lifecycle rules: %w", err)
 	}
@@ -582,7 +591,7 @@ func (s *BucketService) SetBucketBlockPublicAccess(ctx context.Context, bucketID
 		config.RestrictPublicBuckets = val
 	}
 
-	if err := s.repo.SetBucketBlockPublicAccess(ctx, bucket.ID, config); err != nil {
+	if err := s.bucketRepo.SetBucketBlockPublicAccess(ctx, bucket.ID, config); err != nil {
 		return fmt.Errorf("failed to update block public access: %w", err)
 	}
 
@@ -607,7 +616,7 @@ func (s *BucketService) GetBucketCORS(ctx context.Context, bucketID string) (*dt
 		return nil, err
 	}
 
-	cors, err := s.repo.GetBucketCORS(ctx, bucket.ID)
+	cors, err := s.bucketRepo.GetBucketCORS(ctx, bucket.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get cors configuration: %w", err)
 	}
@@ -659,7 +668,7 @@ func (s *BucketService) SetBucketCORS(ctx context.Context, bucketID string, inpu
 		})
 	}
 
-	if err := s.repo.SetBucketCORS(ctx, bucket.ID, cors); err != nil {
+	if err := s.bucketRepo.SetBucketCORS(ctx, bucket.ID, cors); err != nil {
 		return fmt.Errorf("failed to save cors configuration: %w", err)
 	}
 
@@ -688,7 +697,7 @@ func (s *BucketService) SetBucketEncryption(ctx context.Context, bucketID string
 		BucketKeyEnabled: input.BucketKeyEnabled,
 	}
 
-	if err := s.repo.SetBucketEncryption(ctx, bucket.ID, encryption); err != nil {
+	if err := s.bucketRepo.SetBucketEncryption(ctx, bucket.ID, encryption); err != nil {
 		return fmt.Errorf("failed to save encryption configuration: %w", err)
 	}
 
@@ -707,7 +716,7 @@ func (s *BucketService) GetBucketEncryption(ctx context.Context, bucketID string
 		return nil, err
 	}
 
-	encryption, err := s.repo.GetBucketEncryption(ctx, bucket.ID)
+	encryption, err := s.bucketRepo.GetBucketEncryption(ctx, bucket.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get encryption configuration: %w", err)
 	}
@@ -730,7 +739,7 @@ func (s *BucketService) GetBucketReplication(ctx context.Context, bucketID strin
 		return nil, err
 	}
 
-	repl, err := s.repo.GetBucketReplication(ctx, bucket.ID)
+	repl, err := s.bucketRepo.GetBucketReplication(ctx, bucket.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get replication configuration: %w", err)
 	}
@@ -750,7 +759,7 @@ func (s *BucketService) GetBucketTags(ctx context.Context, bucketID string) (*dt
 		return nil, err
 	}
 
-	tags, err := s.repo.GetBucketTags(ctx, bucket.ID)
+	tags, err := s.bucketRepo.GetBucketTags(ctx, bucket.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get bucket tags: %w", err)
 	}
@@ -775,7 +784,7 @@ func (s *BucketService) GetBucketNotifications(ctx context.Context, bucketID str
 		return nil, err
 	}
 
-	notif, err := s.repo.GetBucketNotifications(ctx, bucket.ID)
+	notif, err := s.bucketRepo.GetBucketNotifications(ctx, bucket.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get notification configuration: %w", err)
 	}
@@ -795,7 +804,7 @@ func (s *BucketService) SetBucketObjectLock(ctx context.Context, bucketID string
 	}
 
 	enabled := input.Status == "Enabled"
-	if err := s.repo.SetBucketObjectLock(ctx, bucket.ID, enabled); err != nil {
+	if err := s.bucketRepo.SetBucketObjectLock(ctx, bucket.ID, enabled); err != nil {
 		return fmt.Errorf("failed to save object lock configuration: %w", err)
 	}
 
@@ -814,7 +823,7 @@ func (s *BucketService) GetBucketObjectLock(ctx context.Context, bucketID string
 		return nil, err
 	}
 
-	enabled, err := s.repo.GetBucketObjectLock(ctx, bucket.ID)
+	enabled, err := s.bucketRepo.GetBucketObjectLock(ctx, bucket.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get object lock configuration: %w", err)
 	}
@@ -834,7 +843,7 @@ func (s *BucketService) SetBucketReplication(ctx context.Context, bucketID strin
 		return err
 	}
 
-	if err := s.repo.SetBucketReplication(ctx, bucket.ID, input); err != nil {
+	if err := s.bucketRepo.SetBucketReplication(ctx, bucket.ID, input); err != nil {
 		return fmt.Errorf("failed to save replication configuration: %w", err)
 	}
 
@@ -853,7 +862,7 @@ func (s *BucketService) SetBucketLogging(ctx context.Context, bucketID string, i
 		return err
 	}
 
-	if err := s.repo.SetBucketLogging(ctx, bucket.ID, input); err != nil {
+	if err := s.bucketRepo.SetBucketLogging(ctx, bucket.ID, input); err != nil {
 		return fmt.Errorf("failed to save logging configuration: %w", err)
 	}
 
@@ -872,7 +881,7 @@ func (s *BucketService) GetBucketLogging(ctx context.Context, bucketID string) (
 		return nil, err
 	}
 
-	logging, err := s.repo.GetBucketLogging(ctx, bucket.ID)
+	logging, err := s.bucketRepo.GetBucketLogging(ctx, bucket.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get logging configuration: %w", err)
 	}
@@ -917,7 +926,7 @@ func (s *BucketService) SetBucketNotifications(ctx context.Context, bucketID str
 		return err
 	}
 
-	if err := s.repo.SetBucketNotifications(ctx, bucket.ID, input); err != nil {
+	if err := s.bucketRepo.SetBucketNotifications(ctx, bucket.ID, input); err != nil {
 		return fmt.Errorf("failed to save notifications configuration: %w", err)
 	}
 
@@ -944,7 +953,7 @@ func (s *BucketService) SetBucketTags(ctx context.Context, bucketID string, inpu
 		})
 	}
 
-	if err := s.repo.SetBucketTags(ctx, bucket.ID, domainTags); err != nil {
+	if err := s.bucketRepo.SetBucketTags(ctx, bucket.ID, domainTags); err != nil {
 		return fmt.Errorf("failed to save tags configuration: %w", err)
 	}
 

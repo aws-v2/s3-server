@@ -17,18 +17,32 @@ import (
 )
 
 type PresignService struct {
-	repo      domain.RepositoryPort
-	storage   domain.StoragePort
-	metrics   *metrics.MetricsClient
-	secretKey string
+	presignedRepo domain.PresignedURLRepository
+	bucketRepo    domain.BucketRepository
+	fileRepo      domain.FileRepository
+	multipartRepo domain.MultipartRepository
+	storage       domain.StoragePort
+	metrics       *metrics.MetricsClient
+	secretKey     string
 }
 
-func NewPresignService(repo domain.RepositoryPort, storage domain.StoragePort, metrics *metrics.MetricsClient, secretKey string) *PresignService {
+func NewPresignService(
+	presignedRepo domain.PresignedURLRepository,
+	bucketRepo domain.BucketRepository,
+	fileRepo domain.FileRepository,
+	multipartRepo domain.MultipartRepository,
+	storage domain.StoragePort,
+	metrics *metrics.MetricsClient,
+	secretKey string,
+) *PresignService {
 	return &PresignService{
-		repo:      repo,
-		storage:   storage,
-		metrics:   metrics,
-		secretKey: secretKey,
+		presignedRepo: presignedRepo,
+		bucketRepo:    bucketRepo,
+		fileRepo:      fileRepo,
+		multipartRepo: multipartRepo,
+		storage:       storage,
+		metrics:       metrics,
+		secretKey:     secretKey,
 	}
 }
 
@@ -45,7 +59,7 @@ func (s *PresignService) GenerateUploadURL(ctx context.Context, input dto.Genera
 	}
 
 	// Verify bucket exists
-	bucket, err := s.repo.GetBucketByID(ctx, input.BucketID, filterID)
+	bucket, err := s.bucketRepo.GetBucketByID(ctx, input.BucketID, filterID)
 	if err != nil {
 		return nil, fmt.Errorf("bucket not found: %w", err)
 	}
@@ -73,7 +87,7 @@ func (s *PresignService) GenerateUploadURL(ctx context.Context, input dto.Genera
 		CreatedAt: time.Now(),
 	}
 
-	if err := s.repo.SavePresignedURL(ctx, presignedURL); err != nil {
+	if err := s.presignedRepo.SavePresignedURL(ctx, presignedURL); err != nil {
 		return nil, fmt.Errorf("failed to save presigned URL: %w", err)
 	}
 
@@ -116,7 +130,7 @@ func (s *PresignService) GenerateDownloadURL(ctx context.Context, input dto.Gene
 	}
 
 	// Verify file exists
-	file, err := s.repo.GetFileByID(ctx, input.FileID)
+	file, err := s.fileRepo.GetFileByID(ctx, input.FileID)
 	if err != nil {
 		return nil, fmt.Errorf("file not found: %w", err)
 	}
@@ -125,7 +139,7 @@ func (s *PresignService) GenerateDownloadURL(ctx context.Context, input dto.Gene
 		return nil, fmt.Errorf("file does not belong to specified bucket")
 	}
 
-	bucket, err := s.repo.GetBucketByID(ctx, input.BucketID, filterID)
+	bucket, err := s.bucketRepo.GetBucketByID(ctx, input.BucketID, filterID)
 	if err != nil {
 		return nil, fmt.Errorf("bucket not found: %w", err)
 	}
@@ -151,7 +165,7 @@ func (s *PresignService) GenerateDownloadURL(ctx context.Context, input dto.Gene
 		CreatedAt: time.Now(),
 	}
 
-	if err := s.repo.SavePresignedURL(ctx, presignedURL); err != nil {
+	if err := s.presignedRepo.SavePresignedURL(ctx, presignedURL); err != nil {
 		return nil, fmt.Errorf("failed to save presigned URL: %w", err)
 	}
 
@@ -169,13 +183,13 @@ func (s *PresignService) GenerateDownloadURL(ctx context.Context, input dto.Gene
 
 // RevokePresignedURL revokes a presigned URL
 func (s *PresignService) RevokePresignedURL(ctx context.Context, urlID string) error {
-	presignedURL, err := s.repo.GetPresignedURLByID(ctx, urlID)
+	presignedURL, err := s.presignedRepo.GetPresignedURLByID(ctx, urlID)
 	if err != nil {
 		return fmt.Errorf("presigned URL not found: %w", err)
 	}
 
 	presignedURL.Revoked = true
-	if err := s.repo.UpdatePresignedURL(ctx, presignedURL); err != nil {
+	if err := s.presignedRepo.UpdatePresignedURL(ctx, presignedURL); err != nil {
 		return fmt.Errorf("failed to revoke presigned URL: %w", err)
 	}
 
@@ -185,7 +199,7 @@ func (s *PresignService) RevokePresignedURL(ctx context.Context, urlID string) e
 // ListPresignedURLs lists active presigned URLs
 func (s *PresignService) ListPresignedURLs(ctx context.Context, input dto.ListPresignedURLsInput) (*dto.ListPresignedURLsOutput, error) {
 
-	urls, err := s.repo.ListPresignedURLs(ctx, input.BucketID, input.Limit)
+	urls, err := s.presignedRepo.ListPresignedURLs(ctx, input.BucketID, input.Limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list presigned URLs: %w", err)
 	}
@@ -212,7 +226,7 @@ func (s *PresignService) ListPresignedURLs(ctx context.Context, input dto.ListPr
 // ValidatePresignedURL checks if a presigned URL is valid and usable
 func (s *PresignService) ValidatePresignedURL(ctx context.Context, input dto.ValidatePresignedURLInput) (*dto.ValidatePresignedURLOutput, error) {
 	// Get presigned URL
-	presignedURL, err := s.repo.GetPresignedURLByID(ctx, input.URLID)
+	presignedURL, err := s.presignedRepo.GetPresignedURLByID(ctx, input.URLID)
 	if err != nil {
 		return &dto.ValidatePresignedURLOutput{
 			Valid:  false,
@@ -262,7 +276,7 @@ func (s *PresignService) GenerateMultipartUploadURLs(ctx context.Context, input 
 	}
 
 	// Verify bucket exists
-	bucket, err := s.repo.GetBucketByID(ctx, input.BucketID, filterID)
+	bucket, err := s.bucketRepo.GetBucketByID(ctx, input.BucketID, filterID)
 	if err != nil {
 		return nil, fmt.Errorf("bucket not found: %w", err)
 	}
@@ -287,7 +301,7 @@ func (s *PresignService) GenerateMultipartUploadURLs(ctx context.Context, input 
 		UpdatedAt: time.Now(),
 	}
 
-	if err := s.repo.SaveMultipartUpload(ctx, upload); err != nil {
+	if err := s.multipartRepo.SaveMultipartUpload(ctx, upload); err != nil {
 		return nil, fmt.Errorf("failed to save multipart upload record: %w", err)
 	}
 
@@ -326,7 +340,7 @@ func (s *PresignService) GenerateMultipartUploadURLs(ctx context.Context, input 
 			presignedURL.Metadata[k] = v
 		}
 
-		if err := s.repo.SavePresignedURL(ctx, presignedURL); err != nil {
+		if err := s.presignedRepo.SavePresignedURL(ctx, presignedURL); err != nil {
 			return nil, fmt.Errorf("failed to save presigned URL for part %d: %w", partNumber, err)
 		}
 	}
@@ -365,7 +379,7 @@ func (s *PresignService) CompleteMultipartUpload(ctx context.Context, input dto.
 	}
 
 	// Verify multipart upload exists
-	upload, err := s.repo.GetMultipartUploadByUploadID(ctx, input.UploadID)
+	upload, err := s.multipartRepo.GetMultipartUploadByUploadID(ctx, input.UploadID)
 	if err != nil {
 		return nil, fmt.Errorf("multipart upload not found: %w", err)
 	}
@@ -374,14 +388,14 @@ func (s *PresignService) CompleteMultipartUpload(ctx context.Context, input dto.
 		return nil, fmt.Errorf("upload does not belong to specified bucket")
 	}
 
-	bucket, err := s.repo.GetBucketByID(ctx, input.BucketID, filterID)
+	bucket, err := s.bucketRepo.GetBucketByID(ctx, input.BucketID, filterID)
 	if err != nil {
 		return nil, fmt.Errorf("bucket not found: %w", err)
 	}
 
 	// Verify all parts exist and are valid (in DB)
 	for _, part := range input.Parts {
-		uploadedPart, err := s.repo.GetMultipartPart(ctx, input.UploadID, part.PartNumber)
+		uploadedPart, err := s.multipartRepo.GetMultipartPart(ctx, input.UploadID, part.PartNumber)
 		if err != nil {
 			return nil, fmt.Errorf("part %d not found in database: %w", part.PartNumber, err)
 		}
@@ -427,7 +441,7 @@ func (s *PresignService) CompleteMultipartUpload(ctx context.Context, input dto.
 	}
 
 	// Save file to DB
-	if err := s.repo.SaveFile(ctx, fileInfo); err != nil {
+	if err := s.fileRepo.SaveFile(ctx, fileInfo); err != nil {
 		return nil, fmt.Errorf("failed to create file record: %w", err)
 	}
 
@@ -438,11 +452,11 @@ func (s *PresignService) CompleteMultipartUpload(ctx context.Context, input dto.
 	}
 
 	// Clean up multipart upload records from DB
-	if err := s.repo.DeleteMultipartUpload(ctx, input.UploadID); err != nil {
+	if err := s.multipartRepo.DeleteMultipartUpload(ctx, input.UploadID); err != nil {
 		// Log error but don't fail since file is already created
 		fmt.Printf("failed to delete multipart upload record: %v\n", err)
 	}
-	if err := s.repo.DeleteMultipartParts(ctx, input.UploadID); err != nil {
+	if err := s.multipartRepo.DeleteMultipartParts(ctx, input.UploadID); err != nil {
 		fmt.Printf("failed to delete multipart parts records: %v\n", err)
 	}
 
@@ -464,7 +478,7 @@ func (s *PresignService) AbortMultipartUpload(ctx context.Context, input dto.Abo
 	}
 
 	// Verify upload exists
-	upload, err := s.repo.GetMultipartUploadByUploadID(ctx, input.UploadID)
+	upload, err := s.multipartRepo.GetMultipartUploadByUploadID(ctx, input.UploadID)
 	if err != nil {
 		return fmt.Errorf("multipart upload not found: %w", err)
 	}
@@ -473,14 +487,14 @@ func (s *PresignService) AbortMultipartUpload(ctx context.Context, input dto.Abo
 		return fmt.Errorf("upload does not belong to specified bucket")
 	}
 
-	bucket, err := s.repo.GetBucketByID(ctx, input.BucketID, filterID)
+	bucket, err := s.bucketRepo.GetBucketByID(ctx, input.BucketID, filterID)
 	if err != nil {
 		return fmt.Errorf("bucket not found: %w", err)
 	}
 
 	// Delete all uploaded parts from storage
 	// We need to list them first if we don't have them in the 'upload' struct
-	parts, err := s.repo.ListMultipartParts(ctx, input.UploadID)
+	parts, err := s.multipartRepo.ListMultipartParts(ctx, input.UploadID)
 	if err == nil {
 		for _, part := range parts {
 			partKey := fmt.Sprintf("%s.part.%s.%d", upload.Key, upload.UploadID, part.PartNumber)
@@ -489,10 +503,10 @@ func (s *PresignService) AbortMultipartUpload(ctx context.Context, input dto.Abo
 	}
 
 	// Delete multipart upload records from DB
-	if err := s.repo.DeleteMultipartUpload(ctx, input.UploadID); err != nil {
+	if err := s.multipartRepo.DeleteMultipartUpload(ctx, input.UploadID); err != nil {
 		return fmt.Errorf("failed to delete multipart upload record: %w", err)
 	}
-	_ = s.repo.DeleteMultipartParts(ctx, input.UploadID)
+	_ = s.multipartRepo.DeleteMultipartParts(ctx, input.UploadID)
 
 	return nil
 }
@@ -500,7 +514,7 @@ func (s *PresignService) AbortMultipartUpload(ctx context.Context, input dto.Abo
 // ListMultipartUploadParts returns uploaded parts for an upload
 func (s *PresignService) ListMultipartUploadParts(ctx context.Context, input dto.ListMultipartPartsInput) (*dto.ListMultipartPartsOutput, error) {
 	// Verify upload exists
-	upload, err := s.repo.GetMultipartUploadByUploadID(ctx, input.UploadID)
+	upload, err := s.multipartRepo.GetMultipartUploadByUploadID(ctx, input.UploadID)
 	if err != nil {
 		return nil, fmt.Errorf("multipart upload not found: %w", err)
 	}
@@ -510,7 +524,7 @@ func (s *PresignService) ListMultipartUploadParts(ctx context.Context, input dto
 	}
 
 	// Get uploaded parts
-	parts, err := s.repo.ListMultipartParts(ctx, input.UploadID)
+	parts, err := s.multipartRepo.ListMultipartParts(ctx, input.UploadID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list parts: %w", err)
 	}

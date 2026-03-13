@@ -20,6 +20,7 @@ type Handlers struct {
 	Multipart    *MultipartHandler
 	Analytics    *AnalyticsHandler
 	AccessPoint  *AccessPointHandler
+	Security     *SecurityHandler
 	Validator    middleware.APIKeyValidator
 	JWTValidator domain.JWTValidator
 }
@@ -47,6 +48,7 @@ func RegisterRoutes(router *gin.Engine, handlers *Handlers) {
 	registerBatchRoutes(v1, handlers.Batch)
 	registerSearchRoutes(v1, handlers.Search)
 	registerPrefixRoutes(v1, handlers.Prefix)
+	registerSecurityRoutes(v1, handlers.Security)
 
 }
 
@@ -165,6 +167,15 @@ func registerBucketRoutes(v1 *gin.RouterGroup, handlers *Handlers, validator mid
 
 		// Empty bucket
 		buckets.POST("/:bucketId/empty", handler.EmptyBucket)
+	}
+}
+
+func registerSecurityRoutes(v1 *gin.RouterGroup, handler *SecurityHandler) {
+	security := v1.Group("/security")
+	security.Use(middleware.LocalBypassMiddleware())
+	security.Use(middleware.ExtractUserIDMiddleware())
+	{
+		security.GET("/summary", handler.GetSecuritySummary)
 	}
 }
 
@@ -291,6 +302,8 @@ func registerSearchRoutes(v1 *gin.RouterGroup, handler *SearchHandler) {
 
 func registerAnalyticsRoutes(v1 *gin.RouterGroup, handler *AnalyticsHandler) {
 	analytics := v1.Group("/analytics")
+	analytics.Use(middleware.LocalBypassMiddleware())
+	analytics.Use(middleware.ExtractUserIDMiddleware())
 	{
 		// Get storage usage statistics
 		analytics.GET("/storage/usage", handler.GetStorageUsage)
@@ -315,6 +328,9 @@ func registerAnalyticsRoutes(v1 *gin.RouterGroup, handler *AnalyticsHandler) {
 
 		// Get API usage statistics
 		analytics.GET("/api/usage", handler.GetAPIUsage)
+
+		// Storage Lens
+		analytics.GET("/storage/lens", handler.GetStorageLensData)
 	}
 }
 

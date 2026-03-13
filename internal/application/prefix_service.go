@@ -15,29 +15,31 @@ import (
 )
 
 type PrefixService struct {
-	repo    domain.RepositoryPort
-	storage domain.StoragePort
-	metrics *metrics.MetricsClient
+	bucketRepo domain.BucketRepository
+	fileRepo   domain.FileRepository
+	storage    domain.StoragePort
+	metrics    *metrics.MetricsClient
 }
 
-func NewPrefixService(repo domain.RepositoryPort, storage domain.StoragePort, metrics *metrics.MetricsClient) *PrefixService {
+func NewPrefixService(bucketRepo domain.BucketRepository, fileRepo domain.FileRepository, storage domain.StoragePort, metrics *metrics.MetricsClient) *PrefixService {
 	return &PrefixService{
-		repo:    repo,
-		storage: storage,
-		metrics: metrics,
+		bucketRepo: bucketRepo,
+		fileRepo:   fileRepo,
+		storage:    storage,
+		metrics:    metrics,
 	}
 }
 
 // ListByPrefix lists files by prefix
 func (s *PrefixService) ListByPrefix(ctx context.Context, input dto.ListByPrefixInput) (*dto.ListByPrefixOutput, error) {
 	// 1. Get all files with the given prefix
-	files, err := s.repo.ListFilesByPrefix(ctx, input.BucketID, input.Prefix, 0) // Get all for filtering
+	files, err := s.fileRepo.ListFilesByPrefix(ctx, input.BucketID, input.Prefix, 0) // Get all for filtering
 	if err != nil {
 		return nil, fmt.Errorf("failed to list files: %w", err)
 	}
 
 	// Emit metrics for ListByPrefix (Tier 2) - we need bucket info
-	if bucket, err := s.repo.GetBucketByID(ctx, input.BucketID, ""); err == nil {
+	if bucket, err := s.bucketRepo.GetBucketByID(ctx, input.BucketID, ""); err == nil {
 		go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
 			ListRequests: 1,
 		})
@@ -117,12 +119,12 @@ func (s *PrefixService) DeleteByPrefix(ctx context.Context, input dto.DeleteByPr
 		filterID = ""
 	}
 
-	bucket, err := s.repo.GetBucketByID(ctx, input.BucketID, filterID)
+	bucket, err := s.bucketRepo.GetBucketByID(ctx, input.BucketID, filterID)
 	if err != nil {
 		return nil, fmt.Errorf("bucket not found: %w", err)
 	}
 
-	files, err := s.repo.ListFilesByPrefix(ctx, input.BucketID, input.Prefix, 0)
+	files, err := s.fileRepo.ListFilesByPrefix(ctx, input.BucketID, input.Prefix, 0)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list files: %w", err)
 	}
@@ -134,7 +136,7 @@ func (s *PrefixService) DeleteByPrefix(ctx context.Context, input dto.DeleteByPr
 			continue
 		}
 
-		if err := s.repo.DeleteFile(ctx, file.ID); err != nil {
+		if err := s.fileRepo.DeleteFile(ctx, file.ID); err != nil {
 			continue
 		}
 
@@ -160,7 +162,7 @@ func (s *PrefixService) CopyByPrefix(ctx context.Context, input dto.CopyByPrefix
 		filterID = ""
 	}
 
-	srcBucket, err := s.repo.GetBucketByID(ctx, input.BucketID, filterID)
+	srcBucket, err := s.bucketRepo.GetBucketByID(ctx, input.BucketID, filterID)
 	if err != nil {
 		return nil, fmt.Errorf("source bucket not found: %w", err)
 	}
@@ -170,12 +172,12 @@ func (s *PrefixService) CopyByPrefix(ctx context.Context, input dto.CopyByPrefix
 		destBucketID = input.BucketID
 	}
 
-	destBucket, err := s.repo.GetBucketByID(ctx, destBucketID, filterID)
+	destBucket, err := s.bucketRepo.GetBucketByID(ctx, destBucketID, filterID)
 	if err != nil {
 		return nil, fmt.Errorf("dest bucket not found: %w", err)
 	}
 
-	files, err := s.repo.ListFilesByPrefix(ctx, input.BucketID, input.SourcePrefix, 0)
+	files, err := s.fileRepo.ListFilesByPrefix(ctx, input.BucketID, input.SourcePrefix, 0)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list files: %w", err)
 	}
@@ -200,7 +202,7 @@ func (s *PrefixService) CopyByPrefix(ctx context.Context, input dto.CopyByPrefix
 			UpdatedAt:   time.Now(),
 		}
 
-		if err := s.repo.SaveFile(ctx, newFile); err != nil {
+		if err := s.fileRepo.SaveFile(ctx, newFile); err != nil {
 			continue
 		}
 
@@ -223,7 +225,7 @@ func (s *PrefixService) CopyByPrefix(ctx context.Context, input dto.CopyByPrefix
 
 // GetSizeByPrefix gets total size of files by prefix
 func (s *PrefixService) GetSizeByPrefix(ctx context.Context, input dto.GetSizeByPrefixInput) (*dto.GetSizeByPrefixOutput, error) {
-	files, err := s.repo.ListFilesByPrefix(ctx, input.BucketID, input.Prefix, 0)
+	files, err := s.fileRepo.ListFilesByPrefix(ctx, input.BucketID, input.Prefix, 0)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list files: %w", err)
 	}
@@ -242,7 +244,7 @@ func (s *PrefixService) GetSizeByPrefix(ctx context.Context, input dto.GetSizeBy
 
 // CountByPrefix counts files by prefix
 func (s *PrefixService) CountByPrefix(ctx context.Context, input dto.CountByPrefixInput) (*dto.CountByPrefixOutput, error) {
-	count, err := s.repo.CountFilesByPrefix(ctx, input.BucketID, input.Prefix)
+	count, err := s.fileRepo.CountFilesByPrefix(ctx, input.BucketID, input.Prefix)
 	if err != nil {
 		return nil, fmt.Errorf("failed to count files: %w", err)
 	}
@@ -260,12 +262,12 @@ func (s *PrefixService) ArchiveByPrefix(ctx context.Context, input dto.ArchiveBy
 		filterID = ""
 	}
 
-	bucket, err := s.repo.GetBucketByID(ctx, input.BucketID, filterID)
+	bucket, err := s.bucketRepo.GetBucketByID(ctx, input.BucketID, filterID)
 	if err != nil {
 		return nil, fmt.Errorf("bucket not found: %w", err)
 	}
 
-	files, err := s.repo.ListFilesByPrefix(ctx, input.BucketID, input.Prefix, 0)
+	files, err := s.fileRepo.ListFilesByPrefix(ctx, input.BucketID, input.Prefix, 0)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list files: %w", err)
 	}
@@ -319,7 +321,7 @@ func (s *PrefixService) ArchiveByPrefix(ctx context.Context, input dto.ArchiveBy
 		UpdatedAt: time.Now(),
 	}
 
-	if err := s.repo.SaveFile(ctx, archiveFile); err != nil {
+	if err := s.fileRepo.SaveFile(ctx, archiveFile); err != nil {
 		return nil, fmt.Errorf("failed to save archive metadata: %w", err)
 	}
 
@@ -379,7 +381,7 @@ func (s *PrefixService) emitMetrics(ctx context.Context, bucketID, ownerID, regi
 
 // SetMetadataByPrefix sets metadata for files by prefix
 func (s *PrefixService) SetMetadataByPrefix(ctx context.Context, input dto.SetMetadataByPrefixInput) (*dto.SetMetadataByPrefixOutput, error) {
-	files, err := s.repo.ListFilesByPrefix(ctx, input.BucketID, input.Prefix, 0)
+	files, err := s.fileRepo.ListFilesByPrefix(ctx, input.BucketID, input.Prefix, 0)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list files: %w", err)
 	}
@@ -390,7 +392,7 @@ func (s *PrefixService) SetMetadataByPrefix(ctx context.Context, input dto.SetMe
 		file.Metadata = input.Metadata
 		file.UpdatedAt = time.Now()
 
-		if err := s.repo.UpdateFile(ctx, &file); err != nil {
+		if err := s.fileRepo.UpdateFile(ctx, &file); err != nil {
 			continue
 		}
 

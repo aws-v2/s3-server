@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"s3/internal/application"
+	"s3/internal/domain"
 	"s3/internal/infrastructure/dto"
 
 	"github.com/gin-gonic/gin"
@@ -123,6 +124,25 @@ func (h *AnalyticsHandler) ExportAnalytics(c *gin.Context) {
 
 func (h *AnalyticsHandler) GetAPIUsage(c *gin.Context) {
 	output, err := h.analyticsService.GetAPIUsage(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, output)
+}
+
+func (h *AnalyticsHandler) GetStorageLensData(c *gin.Context) {
+	// For now, we'll extract user ID from the context (auth middleware)
+	// actor, _ := c.Request.Context().Value("actor").(domain.Actor)
+	// userID := actor.ID
+
+	// Mocking userID as 'sys' if not present for local testing, or use extracted ID
+	userID := "sys"
+	if actor, ok := c.Request.Context().Value("actor").(domain.Actor); ok {
+		userID = actor.ID
+	}
+
+	output, err := h.analyticsService.GetStorageLensReport(c.Request.Context(), userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

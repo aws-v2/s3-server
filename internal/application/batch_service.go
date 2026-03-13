@@ -13,16 +13,26 @@ import (
 )
 
 type BatchService struct {
-	repo    domain.RepositoryPort
-	storage domain.StoragePort
-	metrics *metrics.MetricsClient
+	batchRepo  domain.BatchRepository
+	bucketRepo domain.BucketRepository
+	fileRepo   domain.FileRepository
+	storage    domain.StoragePort
+	metrics    *metrics.MetricsClient
 }
 
-func NewBatchService(repo domain.RepositoryPort, storage domain.StoragePort, metrics *metrics.MetricsClient) *BatchService {
+func NewBatchService(
+	batchRepo domain.BatchRepository,
+	bucketRepo domain.BucketRepository,
+	fileRepo domain.FileRepository,
+	storage domain.StoragePort,
+	metrics *metrics.MetricsClient,
+) *BatchService {
 	return &BatchService{
-		repo:    repo,
-		storage: storage,
-		metrics: metrics,
+		batchRepo:  batchRepo,
+		bucketRepo: bucketRepo,
+		fileRepo:   fileRepo,
+		storage:    storage,
+		metrics:    metrics,
 	}
 }
 
@@ -39,7 +49,7 @@ func (s *BatchService) BatchUpload(ctx context.Context, input dto.BatchUploadInp
 		UpdatedAt:  time.Now(),
 	}
 
-	if err := s.repo.SaveBatchOperation(ctx, operation); err != nil {
+	if err := s.batchRepo.SaveBatchOperation(ctx, operation); err != nil {
 		return nil, fmt.Errorf("failed to create batch operation: %w", err)
 	}
 
@@ -58,12 +68,12 @@ func (s *BatchService) BatchUpload(ctx context.Context, input dto.BatchUploadInp
 }
 
 func (s *BatchService) processBatchUpload(ctx context.Context, operationID string, input dto.BatchUploadInput, filterID string) {
-	operation, _ := s.repo.GetBatchOperationByID(ctx, operationID)
+	operation, _ := s.batchRepo.GetBatchOperationByID(ctx, operationID)
 	operation.Status = "processing"
 	operation.UpdatedAt = time.Now()
-	s.repo.UpdateBatchOperation(ctx, operation)
+	s.batchRepo.UpdateBatchOperation(ctx, operation)
 
-	bucket, err := s.repo.GetBucketByID(ctx, input.BucketID, filterID)
+	bucket, err := s.bucketRepo.GetBucketByID(ctx, input.BucketID, filterID)
 	if err != nil {
 		operation.Status = "failed"
 		operation.Errors = append(operation.Errors, dto.BatchOperationError{
@@ -72,7 +82,7 @@ func (s *BatchService) processBatchUpload(ctx context.Context, operationID strin
 			Error: fmt.Sprintf("bucket not found: %v", err),
 		})
 		operation.UpdatedAt = time.Now()
-		s.repo.UpdateBatchOperation(ctx, operation)
+		s.batchRepo.UpdateBatchOperation(ctx, operation)
 		return
 	}
 
@@ -112,7 +122,7 @@ func (s *BatchService) processBatchUpload(ctx context.Context, operationID strin
 			UpdatedAt:   time.Now(),
 		}
 
-		if err := s.repo.SaveFile(ctx, fileRecord); err != nil {
+		if err := s.fileRepo.SaveFile(ctx, fileRecord); err != nil {
 			operation.FailedItems++
 			operation.Errors = append(operation.Errors, dto.BatchOperationError{
 				Index: i,
@@ -124,14 +134,14 @@ func (s *BatchService) processBatchUpload(ctx context.Context, operationID strin
 		}
 
 		operation.UpdatedAt = time.Now()
-		s.repo.UpdateBatchOperation(ctx, operation)
+		s.batchRepo.UpdateBatchOperation(ctx, operation)
 	}
 
 	operation.Status = "completed"
 	completedAt := time.Now()
 	operation.CompletedAt = &completedAt
 	operation.UpdatedAt = completedAt
-	s.repo.UpdateBatchOperation(ctx, operation)
+	s.batchRepo.UpdateBatchOperation(ctx, operation)
 
 	// Emit metrics for BatchUpload (Tier 1 x N + Bytes)
 	var totalBytes int64
@@ -159,7 +169,7 @@ func (s *BatchService) BatchDelete(ctx context.Context, input dto.BatchDeleteInp
 		UpdatedAt:  time.Now(),
 	}
 
-	if err := s.repo.SaveBatchOperation(ctx, operation); err != nil {
+	if err := s.batchRepo.SaveBatchOperation(ctx, operation); err != nil {
 		return nil, fmt.Errorf("failed to create batch operation: %w", err)
 	}
 
@@ -178,12 +188,12 @@ func (s *BatchService) BatchDelete(ctx context.Context, input dto.BatchDeleteInp
 }
 
 func (s *BatchService) processBatchDelete(ctx context.Context, operationID string, input dto.BatchDeleteInput, filterID string) {
-	operation, _ := s.repo.GetBatchOperationByID(ctx, operationID)
+	operation, _ := s.batchRepo.GetBatchOperationByID(ctx, operationID)
 	operation.Status = "processing"
 	operation.UpdatedAt = time.Now()
-	s.repo.UpdateBatchOperation(ctx, operation)
+	s.batchRepo.UpdateBatchOperation(ctx, operation)
 
-	bucket, err := s.repo.GetBucketByID(ctx, input.BucketID, filterID)
+	bucket, err := s.bucketRepo.GetBucketByID(ctx, input.BucketID, filterID)
 	if err != nil {
 		operation.Status = "failed"
 		operation.Errors = append(operation.Errors, dto.BatchOperationError{
@@ -192,7 +202,7 @@ func (s *BatchService) processBatchDelete(ctx context.Context, operationID strin
 			Error: fmt.Sprintf("bucket not found: %v", err),
 		})
 		operation.UpdatedAt = time.Now()
-		s.repo.UpdateBatchOperation(ctx, operation)
+		s.batchRepo.UpdateBatchOperation(ctx, operation)
 		return
 	}
 
@@ -209,7 +219,7 @@ func (s *BatchService) processBatchDelete(ctx context.Context, operationID strin
 		}
 
 		// Delete metadata from repository
-		file, err := s.repo.GetFileByKey(ctx, input.BucketID, key)
+		file, err := s.fileRepo.GetFileByKey(ctx, input.BucketID, key)
 		if err != nil {
 			operation.FailedItems++
 			operation.Errors = append(operation.Errors, dto.BatchOperationError{
@@ -220,7 +230,7 @@ func (s *BatchService) processBatchDelete(ctx context.Context, operationID strin
 			continue
 		}
 
-		if err := s.repo.DeleteFile(ctx, file.ID); err != nil {
+		if err := s.fileRepo.DeleteFile(ctx, file.ID); err != nil {
 			operation.FailedItems++
 			operation.Errors = append(operation.Errors, dto.BatchOperationError{
 				Index: i,
@@ -232,14 +242,14 @@ func (s *BatchService) processBatchDelete(ctx context.Context, operationID strin
 		}
 
 		operation.UpdatedAt = time.Now()
-		s.repo.UpdateBatchOperation(ctx, operation)
+		s.batchRepo.UpdateBatchOperation(ctx, operation)
 	}
 
 	operation.Status = "completed"
 	completedAt := time.Now()
 	operation.CompletedAt = &completedAt
 	operation.UpdatedAt = completedAt
-	s.repo.UpdateBatchOperation(ctx, operation)
+	s.batchRepo.UpdateBatchOperation(ctx, operation)
 
 	// Emit metrics for BatchDelete (Tier 1/Free x N)
 	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
@@ -260,7 +270,7 @@ func (s *BatchService) BatchCopy(ctx context.Context, input dto.BatchCopyInput) 
 		UpdatedAt:  time.Now(),
 	}
 
-	if err := s.repo.SaveBatchOperation(ctx, operation); err != nil {
+	if err := s.batchRepo.SaveBatchOperation(ctx, operation); err != nil {
 		return nil, fmt.Errorf("failed to create batch operation: %w", err)
 	}
 
@@ -279,13 +289,13 @@ func (s *BatchService) BatchCopy(ctx context.Context, input dto.BatchCopyInput) 
 }
 
 func (s *BatchService) processBatchCopy(ctx context.Context, operationID string, input dto.BatchCopyInput, filterID string) {
-	operation, _ := s.repo.GetBatchOperationByID(ctx, operationID)
+	operation, _ := s.batchRepo.GetBatchOperationByID(ctx, operationID)
 	operation.Status = "processing"
 	operation.UpdatedAt = time.Now()
-	s.repo.UpdateBatchOperation(ctx, operation)
+	s.batchRepo.UpdateBatchOperation(ctx, operation)
 
 	for i, item := range input.Items {
-		srcBucket, err := s.repo.GetBucketByID(ctx, item.SourceBucket, filterID)
+		srcBucket, err := s.bucketRepo.GetBucketByID(ctx, item.SourceBucket, filterID)
 		if err != nil {
 			operation.FailedItems++
 			operation.Errors = append(operation.Errors, dto.BatchOperationError{
@@ -296,7 +306,7 @@ func (s *BatchService) processBatchCopy(ctx context.Context, operationID string,
 			continue
 		}
 
-		dstBucket, err := s.repo.GetBucketByID(ctx, item.DestBucket, filterID)
+		dstBucket, err := s.bucketRepo.GetBucketByID(ctx, item.DestBucket, filterID)
 		if err != nil {
 			operation.FailedItems++
 			operation.Errors = append(operation.Errors, dto.BatchOperationError{
@@ -319,7 +329,7 @@ func (s *BatchService) processBatchCopy(ctx context.Context, operationID string,
 		}
 
 		// Get source file metadata
-		srcFile, err := s.repo.GetFileByKey(ctx, item.SourceBucket, item.SourceKey)
+		srcFile, err := s.fileRepo.GetFileByKey(ctx, item.SourceBucket, item.SourceKey)
 		if err != nil {
 			operation.FailedItems++
 			operation.Errors = append(operation.Errors, dto.BatchOperationError{
@@ -343,7 +353,7 @@ func (s *BatchService) processBatchCopy(ctx context.Context, operationID string,
 			UpdatedAt:   time.Now(),
 		}
 
-		if err := s.repo.SaveFile(ctx, dstFile); err != nil {
+		if err := s.fileRepo.SaveFile(ctx, dstFile); err != nil {
 			operation.FailedItems++
 			operation.Errors = append(operation.Errors, dto.BatchOperationError{
 				Index: i,
@@ -355,14 +365,14 @@ func (s *BatchService) processBatchCopy(ctx context.Context, operationID string,
 		}
 
 		operation.UpdatedAt = time.Now()
-		s.repo.UpdateBatchOperation(ctx, operation)
+		s.batchRepo.UpdateBatchOperation(ctx, operation)
 	}
 
 	operation.Status = "completed"
 	completedAt := time.Now()
 	operation.CompletedAt = &completedAt
 	operation.UpdatedAt = completedAt
-	s.repo.UpdateBatchOperation(ctx, operation)
+	s.batchRepo.UpdateBatchOperation(ctx, operation)
 }
 
 // BatchMove moves multiple files
@@ -378,7 +388,7 @@ func (s *BatchService) BatchMove(ctx context.Context, input dto.BatchMoveInput) 
 		UpdatedAt:  time.Now(),
 	}
 
-	if err := s.repo.SaveBatchOperation(ctx, operation); err != nil {
+	if err := s.batchRepo.SaveBatchOperation(ctx, operation); err != nil {
 		return nil, fmt.Errorf("failed to create batch operation: %w", err)
 	}
 
@@ -397,13 +407,13 @@ func (s *BatchService) BatchMove(ctx context.Context, input dto.BatchMoveInput) 
 }
 
 func (s *BatchService) processBatchMove(ctx context.Context, operationID string, input dto.BatchMoveInput, filterID string) {
-	operation, _ := s.repo.GetBatchOperationByID(ctx, operationID)
+	operation, _ := s.batchRepo.GetBatchOperationByID(ctx, operationID)
 	operation.Status = "processing"
 	operation.UpdatedAt = time.Now()
-	s.repo.UpdateBatchOperation(ctx, operation)
+	s.batchRepo.UpdateBatchOperation(ctx, operation)
 
 	for i, item := range input.Items {
-		srcBucket, err := s.repo.GetBucketByID(ctx, item.SourceBucket, filterID)
+		srcBucket, err := s.bucketRepo.GetBucketByID(ctx, item.SourceBucket, filterID)
 		if err != nil {
 			operation.FailedItems++
 			operation.Errors = append(operation.Errors, dto.BatchOperationError{
@@ -414,7 +424,7 @@ func (s *BatchService) processBatchMove(ctx context.Context, operationID string,
 			continue
 		}
 
-		dstBucket, err := s.repo.GetBucketByID(ctx, item.DestBucket, filterID)
+		dstBucket, err := s.bucketRepo.GetBucketByID(ctx, item.DestBucket, filterID)
 		if err != nil {
 			operation.FailedItems++
 			operation.Errors = append(operation.Errors, dto.BatchOperationError{
@@ -437,7 +447,7 @@ func (s *BatchService) processBatchMove(ctx context.Context, operationID string,
 		}
 
 		// Get source file metadata
-		srcFile, err := s.repo.GetFileByKey(ctx, item.SourceBucket, item.SourceKey)
+		srcFile, err := s.fileRepo.GetFileByKey(ctx, item.SourceBucket, item.SourceKey)
 		if err != nil {
 			operation.FailedItems++
 			operation.Errors = append(operation.Errors, dto.BatchOperationError{
@@ -460,7 +470,7 @@ func (s *BatchService) processBatchMove(ctx context.Context, operationID string,
 			UpdatedAt:   time.Now(),
 		}
 
-		if err := s.repo.SaveFile(ctx, dstFile); err != nil {
+		if err := s.fileRepo.SaveFile(ctx, dstFile); err != nil {
 			operation.FailedItems++
 			operation.Errors = append(operation.Errors, dto.BatchOperationError{
 				Index: i,
@@ -482,7 +492,7 @@ func (s *BatchService) processBatchMove(ctx context.Context, operationID string,
 		}
 
 		// Delete source metadata
-		if err := s.repo.DeleteFile(ctx, srcFile.ID); err != nil {
+		if err := s.fileRepo.DeleteFile(ctx, srcFile.ID); err != nil {
 			operation.FailedItems++
 			operation.Errors = append(operation.Errors, dto.BatchOperationError{
 				Index: i,
@@ -494,14 +504,14 @@ func (s *BatchService) processBatchMove(ctx context.Context, operationID string,
 		}
 
 		operation.UpdatedAt = time.Now()
-		s.repo.UpdateBatchOperation(ctx, operation)
+		s.batchRepo.UpdateBatchOperation(ctx, operation)
 	}
 
 	operation.Status = "completed"
 	completedAt := time.Now()
 	operation.CompletedAt = &completedAt
 	operation.UpdatedAt = completedAt
-	s.repo.UpdateBatchOperation(ctx, operation)
+	s.batchRepo.UpdateBatchOperation(ctx, operation)
 }
 
 // BatchUpdateMetadata updates metadata for multiple files
@@ -517,7 +527,7 @@ func (s *BatchService) BatchUpdateMetadata(ctx context.Context, input dto.BatchU
 		UpdatedAt:  time.Now(),
 	}
 
-	if err := s.repo.SaveBatchOperation(ctx, operation); err != nil {
+	if err := s.batchRepo.SaveBatchOperation(ctx, operation); err != nil {
 		return nil, fmt.Errorf("failed to create batch operation: %w", err)
 	}
 
@@ -530,13 +540,13 @@ func (s *BatchService) BatchUpdateMetadata(ctx context.Context, input dto.BatchU
 }
 
 func (s *BatchService) processBatchUpdateMetadata(ctx context.Context, operationID string, input dto.BatchUpdateMetadataInput) {
-	operation, _ := s.repo.GetBatchOperationByID(ctx, operationID)
+	operation, _ := s.batchRepo.GetBatchOperationByID(ctx, operationID)
 	operation.Status = "processing"
 	operation.UpdatedAt = time.Now()
-	s.repo.UpdateBatchOperation(ctx, operation)
+	s.batchRepo.UpdateBatchOperation(ctx, operation)
 
 	for i, update := range input.Updates {
-		file, err := s.repo.GetFileByKey(ctx, input.BucketID, update.Key)
+		file, err := s.fileRepo.GetFileByKey(ctx, input.BucketID, update.Key)
 		if err != nil {
 			operation.FailedItems++
 			operation.Errors = append(operation.Errors, dto.BatchOperationError{
@@ -550,7 +560,7 @@ func (s *BatchService) processBatchUpdateMetadata(ctx context.Context, operation
 		file.Metadata = update.Metadata
 		file.UpdatedAt = time.Now()
 
-		if err := s.repo.UpdateFile(ctx, file); err != nil {
+		if err := s.fileRepo.UpdateFile(ctx, file); err != nil {
 			operation.FailedItems++
 			operation.Errors = append(operation.Errors, dto.BatchOperationError{
 				Index: i,
@@ -562,19 +572,19 @@ func (s *BatchService) processBatchUpdateMetadata(ctx context.Context, operation
 		}
 
 		operation.UpdatedAt = time.Now()
-		s.repo.UpdateBatchOperation(ctx, operation)
+		s.batchRepo.UpdateBatchOperation(ctx, operation)
 	}
 
 	operation.Status = "completed"
 	completedAt := time.Now()
 	operation.CompletedAt = &completedAt
 	operation.UpdatedAt = completedAt
-	s.repo.UpdateBatchOperation(ctx, operation)
+	s.batchRepo.UpdateBatchOperation(ctx, operation)
 }
 
 // GetBatchOperationStatus gets the status of a batch operation
 func (s *BatchService) GetBatchOperationStatus(ctx context.Context, operationID string) (*dto.BatchOperationStatusOutput, error) {
-	operation, err := s.repo.GetBatchOperationByID(ctx, operationID)
+	operation, err := s.batchRepo.GetBatchOperationByID(ctx, operationID)
 	if err != nil {
 		return nil, fmt.Errorf("batch operation not found: %w", err)
 	}
@@ -595,7 +605,7 @@ func (s *BatchService) GetBatchOperationStatus(ctx context.Context, operationID 
 
 // ListBatchOperations lists batch operations
 func (s *BatchService) ListBatchOperations(ctx context.Context, input dto.ListBatchOperationsInput) (*dto.ListBatchOperationsOutput, error) {
-	operations, err := s.repo.ListBatchOperations(ctx, input.Status, input.Type, input.Limit)
+	operations, err := s.batchRepo.ListBatchOperations(ctx, input.Status, input.Type, input.Limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list batch operations: %w", err)
 	}
@@ -624,7 +634,7 @@ func (s *BatchService) ListBatchOperations(ctx context.Context, input dto.ListBa
 
 // CancelBatchOperation cancels a batch operation
 func (s *BatchService) CancelBatchOperation(ctx context.Context, operationID string) error {
-	operation, err := s.repo.GetBatchOperationByID(ctx, operationID)
+	operation, err := s.batchRepo.GetBatchOperationByID(ctx, operationID)
 	if err != nil {
 		return fmt.Errorf("batch operation not found: %w", err)
 	}
@@ -636,7 +646,7 @@ func (s *BatchService) CancelBatchOperation(ctx context.Context, operationID str
 	operation.Status = "cancelled"
 	operation.UpdatedAt = time.Now()
 
-	if err := s.repo.UpdateBatchOperation(ctx, operation); err != nil {
+	if err := s.batchRepo.UpdateBatchOperation(ctx, operation); err != nil {
 		return fmt.Errorf("failed to cancel batch operation: %w", err)
 	}
 

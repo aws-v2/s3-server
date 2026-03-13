@@ -630,6 +630,52 @@ func (r *PostgresRepository) SaveBucket(ctx context.Context, bucket *domain.Buck
 }
 
 // ListBuckets retrieves all buckets
+func (r *PostgresRepository) ListBucketsByOwner(ctx context.Context, ownerID string) ([]domain.Bucket, error) {
+	query := `SELECT id, name, owner_id, region, bucket_type, object_ownership, block_public_access, 
+	          versioning_status, tags, encryption, object_lock, created_at, updated_at, storage_name, policy, notifications, logging 
+	          FROM buckets WHERE owner_id = $1`
+	rows, err := r.db.QueryContext(ctx, query, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var buckets []domain.Bucket
+	for rows.Next() {
+		var b domain.Bucket
+		var blockJSON, tagsJSON, encJSON, policyJSON, notifJSON, loggingJSON []byte
+		err := rows.Scan(
+			&b.ID, &b.Name, &b.OwnerID, &b.Region, &b.BucketType, &b.ObjectOwnership, &blockJSON,
+			&b.VersioningStatus, &tagsJSON, &encJSON, &b.ObjectLock, &b.CreatedAt, &b.UpdatedAt, &b.StorageName, &policyJSON, &notifJSON, &loggingJSON,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		if len(blockJSON) > 0 {
+			json.Unmarshal(blockJSON, &b.BlockPublicAccess)
+		}
+		if len(tagsJSON) > 0 {
+			json.Unmarshal(tagsJSON, &b.Tags)
+		}
+		if len(encJSON) > 0 {
+			json.Unmarshal(encJSON, &b.Encryption)
+		}
+		if len(policyJSON) > 0 {
+			json.Unmarshal(policyJSON, &b.Policy)
+		}
+		if len(notifJSON) > 0 {
+			json.Unmarshal(notifJSON, &b.Notifications)
+		}
+		if len(loggingJSON) > 0 {
+			json.Unmarshal(loggingJSON, &b.Logging)
+		}
+
+		buckets = append(buckets, b)
+	}
+	return buckets, nil
+}
+
 func (r *PostgresRepository) ListBuckets(ctx context.Context, ownerID string) ([]domain.Bucket, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()

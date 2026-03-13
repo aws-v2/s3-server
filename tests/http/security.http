@@ -1,0 +1,7 @@
+@baseUrl = http://localhost:8080/api/v1
+@bucketUrl = http://localhost:8080/api/v1/buckets
+@authToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c
+
+### GET SECURITY SUMMARY
+GET {{bucketUrl}}/security/summary
+Authorization: Bearer {{authToken}}
