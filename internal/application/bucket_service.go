@@ -195,7 +195,6 @@ func (s *BucketService) ListBuckets(ctx context.Context) ([]domain.Bucket, error
 	if IsAdmin(actor.ID) {
 		filterID = ""
 	}
-	fmt.Printf("-------------------*-%s-*------------", actor)
 	buckets, err := s.bucketRepo.ListBuckets(ctx, filterID)
 	if err == nil {
 		// Emit metrics for List (Tier 2) - Note: This is an account-level list, but we can log it
