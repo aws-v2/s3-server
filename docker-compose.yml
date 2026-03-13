@@ -40,7 +40,7 @@ services:
       - MINIO_ROOT_USER=minioadmin
       - MINIO_ROOT_PASSWORD=minioadmin123
       - MINIO_NOTIFY_WEBHOOK_ENABLE_NATS=on
-      - MINIO_NOTIFY_WEBHOOK_ENDPOINT_NATS=http://mycloud-s3:3000/webhook
+      - MINIO_NOTIFY_WEBHOOK_ENDPOINT_NATS=http://s3-service:8099/api/v1/s3/webhooks
     restart: unless-stopped
     networks:
       - mini-aws-network
@@ -63,6 +63,36 @@ services:
       - "5432:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
+    networks:
+      - mini-aws-network
+
+  # S3 Service Application
+  s3-service:
+    build: .
+    container_name: s3-service
+    ports:
+      - "8082:8099"
+    environment:
+      - SERVER_PORT=8099
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=root
+      - POSTGRES_PASSWORD=root
+      - POSTGRES_DB=s3
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin123
+      - MINIO_USE_SSL=false
+      - NATS_URL=nats://nats:4222
+      - NATS_USER=auth-server
+      - NATS_PASSWORD=auth-secret
+    depends_on:
+      postgres:
+        condition: service_started
+      nats:
+        condition: service_started
+      minio:
+        condition: service_healthy
     networks:
       - mini-aws-network
 
