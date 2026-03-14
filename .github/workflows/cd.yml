@@ -45,4 +45,4 @@ jobs:
           docker pull qarani/s3-server:latest
           docker stop s3-server || true
           docker rm s3-server || true
-          docker run -d --name s3-server -p 8099:8099 qarani/s3-server:latest
+          docker run -d --name s3-server -p 8083:8083 qarani/s3-server:latest
