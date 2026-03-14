@@ -77,7 +77,7 @@ func Load() (*Config, error) {
 			UseSSL:    getEnvBool("MINIO_USE_SSL", false),
 		},
 		Server: ServerConfig{
-			Port: getEnv("SERVER_PORT", "8082"),
+			Port: getEnv("SERVER_PORT", "8083"),
 		},
 		NATS: NATSConfig{
 			URL:      getEnv("NATS_URL", "nats://localhost:4222"),
