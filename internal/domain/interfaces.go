@@ -189,6 +189,7 @@ type SystemPort interface {
 
 type EventPublisher interface {
 	Publish(ctx context.Context, topic string, payload interface{}) error
+	PublishRaw(ctx context.Context, topic string, payload interface{}) error
 }
 
 type TokenProvider interface {

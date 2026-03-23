@@ -28,6 +28,7 @@ type Handlers struct {
 // RegisterRoutes registers all application routes
 func RegisterRoutes(router *gin.Engine, handlers *Handlers) {
 	// API group (Gateway strips /api/v1)
+	router.Use(middleware.CORSMiddleware())
 	v1 := router.Group("/api/v1/s3")
 
 	// Chain authentication middlewares: try API key first, then JWT

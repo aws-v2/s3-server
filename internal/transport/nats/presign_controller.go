@@ -10,6 +10,7 @@ import (
 	"s3/internal/application"
 	"s3/internal/domain"
 	"s3/internal/infrastructure/dto"
+	"time"
 
 	"github.com/nats-io/nats.go"
 )
@@ -28,13 +29,20 @@ type PresignController struct {
 	conn           *nats.Conn
 	presignService *application.PresignService
 	bucketService  *application.BucketService
+	userRepo       domain.UserRepository
 }
 
-func NewPresignController(conn *nats.Conn, presignService *application.PresignService, bucketService *application.BucketService) *PresignController {
+func NewPresignController(
+	conn *nats.Conn,
+	presignService *application.PresignService,
+	bucketService *application.BucketService,
+	userRepo domain.UserRepository,
+) *PresignController {
 	return &PresignController{
 		conn:           conn,
 		presignService: presignService,
 		bucketService:  bucketService,
+		userRepo:       userRepo,
 	}
 }
 
@@ -67,6 +75,13 @@ func (c *PresignController) handleCreatePresignedURL(msg *nats.Msg) {
 	actor := domain.Actor{ID: req.UserID}
 	ctx = context.WithValue(ctx, "actor", actor)
 
+	// Ensure user exists (satisfy FK constraint)
+	if err := c.ensureUserExists(ctx, req.UserID); err != nil {
+		log.Printf("[S3] Warning: failed to ensure user %s exists: %v", req.UserID, err)
+		// We continue anyway, as CreateBucket might still work if user already exists
+		// or fail with the FK as before, but at least we tried.
+	}
+
 	// Ensure bucket exists
 	bucket, err := c.bucketService.GetBucketByName(ctx, bucketName)
 	var bucketID string
@@ -79,6 +94,7 @@ func (c *PresignController) handleCreatePresignedURL(msg *nats.Msg) {
 		newBucket, err := c.bucketService.CreateBucket(ctx, createInput)
 		if err != nil {
 			log.Printf("[S3] Failed to create bucket %s: %v", bucketName, err)
+			c.respondWithError(msg, "failed to create bucket")
 			return
 		}
 		bucketID = newBucket.BucketID
@@ -111,4 +127,38 @@ func (c *PresignController) handleCreatePresignedURL(msg *nats.Msg) {
 	}
 
 	log.Printf("[S3] Presigned URL generated for Game %d", req.GameID)
+}
+
+func (c *PresignController) ensureUserExists(ctx context.Context, userID string) error {
+	_, err := c.userRepo.GetUserByID(ctx, userID)
+	if err == nil {
+		return nil
+	}
+
+	// User doesn't exist, create a placeholder
+	user := &domain.User{
+		ID:           userID,
+		Email:        fmt.Sprintf("%s@placeholder.com", userID),
+		Name:         "Gamelift User",
+		PasswordHash: "N/A",
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
+		IsActive:     true,
+	}
+
+	_, err = c.userRepo.SaveUser(ctx, user)
+	if err != nil {
+		return fmt.Errorf("failed to save placeholder user: %w", err)
+	}
+
+	log.Printf("[S3] Created placeholder user: %s", userID)
+	return nil
+}
+
+func (c *PresignController) respondWithError(msg *nats.Msg, errorMsg string) {
+	resp := map[string]string{"error": errorMsg}
+	data, _ := json.Marshal(resp)
+	if err := msg.Respond(data); err != nil {
+		log.Printf("[S3] Failed to send error response: %v", err)
+	}
 }

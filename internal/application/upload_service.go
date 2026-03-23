@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"strings"
 	"time"
 
@@ -81,27 +82,44 @@ func (s *UploadService) UploadObjectReader(ctx context.Context, bucketID, key st
 	})
 
 	// Check if this is a game file and emit stored event
+	log.Printf("[S3] Checking if key %s is a game file...", key)
+	
+	// Normalize key (handle leading slash)
+	cleanKey := strings.TrimPrefix(key, "/")
+
 	// Pattern: uploads/games/{game_id}/game.mp4
-	if strings.HasPrefix(key, "uploads/games/") && strings.HasSuffix(key, "/game.mp4") {
-		parts := strings.Split(key, "/")
+	if strings.HasPrefix(cleanKey, "uploads/games/") && strings.HasSuffix(cleanKey, "/game.mp4") {
+		log.Printf("[S3] Key %s matches game file pattern", cleanKey)
+		parts := strings.Split(cleanKey, "/")
 		if len(parts) >= 3 {
 			gameIDStr := parts[2]
 			var gameID int
-			fmt.Sscanf(gameIDStr, "%d", &gameID)
+			_, err := fmt.Sscanf(gameIDStr, "%d", &gameID)
+			if err != nil {
+				log.Printf("[S3] Error parsing game ID from %s: %v", gameIDStr, err)
+			}
 
 			if gameID > 0 {
 				event := map[string]interface{}{
 					"game_id": gameID,
-					"s3_arn":  fmt.Sprintf("arn:serw:s3:%s:%s:object/%s/%s", bucket.Region, bucket.OwnerID, bucket.Name, key),
+					"s3_arn":  fmt.Sprintf("arn:aws:s3:::%s/%s", bucket.Name, cleanKey),
 					"status":  "success",
 				}
-				if err := s.events.Publish(ctx, "dev.s3.v1.game.stored", event); err != nil {
-					fmt.Printf("[S3] Error publishing stored event: %v\n", err)
+				log.Printf("[S3] Publishing stored event for Game %d to dev.s3.v1.game.stored (Core NATS)", gameID)
+				if err := s.events.PublishRaw(ctx, "dev.s3.v1.game.stored", event); err != nil {
+					log.Printf("[S3] Error publishing stored event: %v", err)
 				} else {
-					fmt.Printf("[S3] Upload finalized for Game %d\n", gameID)
+					log.Printf("[S3] Upload finalized for Game %d: %s", gameID, event["s3_arn"])
 				}
+			} else {
+				log.Printf("[S3] Parsed gameID is 0 or invalid")
 			}
+		} else {
+			log.Printf("[S3] Key parts length %d too short", len(parts))
 		}
+	} else {
+		log.Printf("[S3] Key %s does NOT match game file pattern (Prefix: %v, Suffix: %v)", 
+			cleanKey, strings.HasPrefix(cleanKey, "uploads/games/"), strings.HasSuffix(cleanKey, "/game.mp4"))
 	}
 
 	return nil

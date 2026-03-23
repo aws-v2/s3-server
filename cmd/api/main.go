@@ -266,7 +266,7 @@ func main() {
 	
 	// Initialize and start NATS controllers
 	log.Println("Initializing NATS controllers...")
-	presignController := nats.NewPresignController(natsAdapter.GetConnection(), presignedService, bucketService)
+	presignController := nats.NewPresignController(natsAdapter.GetConnection(), presignedService, bucketService, postgresRepo)
 	if err := presignController.Start(); err != nil {
 		log.Printf("Warning: failed to start NATS presign controller: %v", err)
 	}

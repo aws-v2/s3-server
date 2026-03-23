@@ -117,7 +117,7 @@ func (n *NATSAdapter) initializeStreams() error {
 	return nil
 }
 
-// Publish publishes an event to NATS
+// Publish publishes an event to NATS JetStream
 func (n *NATSAdapter) Publish(ctx context.Context, topic string, payload interface{}) error {
 	data, err := json.Marshal(payload)
 	if err != nil {
@@ -127,7 +127,23 @@ func (n *NATSAdapter) Publish(ctx context.Context, topic string, payload interfa
 	// Publish to JetStream for persistence
 	_, err = n.js.Publish(topic, data)
 	if err != nil {
-		return fmt.Errorf("failed to publish event: %w", err)
+		return fmt.Errorf("failed to publish event to jetstream: %w", err)
+	}
+
+	return nil
+}
+
+// PublishRaw publishes an event to Core NATS (fire and forget)
+func (n *NATSAdapter) PublishRaw(ctx context.Context, topic string, payload interface{}) error {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal payload: %w", err)
+	}
+
+	// Publish to core NATS
+	err = n.conn.Publish(topic, data)
+	if err != nil {
+		return fmt.Errorf("failed to publish event to core nats: %w", err)
 	}
 
 	return nil
