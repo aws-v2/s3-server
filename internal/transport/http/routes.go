@@ -183,6 +183,9 @@ func registerSecurityRoutes(v1 *gin.RouterGroup, handler *SecurityHandler) {
 func registerPresignRoutes(v1 *gin.RouterGroup, handler *PresignHandler) {
 	presign := v1.Group("/presign")
 	{
+		// Generic object handler for presigned URLs
+		v1.PUT("/buckets/:bucketId/objects/*key", handler.HandleObjectUpload)
+
 		// Generate presigned URL for upload
 		presign.POST("/:bucketId/upload", handler.GenerateUploadURL)
 

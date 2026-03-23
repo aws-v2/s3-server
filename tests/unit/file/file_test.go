@@ -2,6 +2,7 @@ package file_test
 
 import (
 	"context"
+	"io"
 	"s3/internal/application"
 	"s3/internal/domain"
 	"testing"
@@ -142,8 +143,21 @@ type MockStoragePort struct {
 	mock.Mock
 }
 
+type MockEventPublisher struct {
+	mock.Mock
+}
+
+func (m *MockEventPublisher) Publish(ctx context.Context, topic string, payload interface{}) error {
+	args := m.Called(ctx, topic, payload)
+	return args.Error(0)
+}
+
 func (m *MockStoragePort) SaveObject(ctx context.Context, bucket, key string, data []byte, metadata map[string]string) error {
 	args := m.Called(ctx, bucket, key, data, metadata)
+	return args.Error(0)
+}
+func (m *MockStoragePort) SaveObjectReader(ctx context.Context, bucket, key string, reader io.Reader, size int64, metadata map[string]string) error {
+	args := m.Called(ctx, bucket, key, reader, size, metadata)
 	return args.Error(0)
 }
 func (m *MockStoragePort) GetObject(ctx context.Context, bucket, key string) ([]byte, error) {
@@ -182,7 +196,8 @@ func TestUploadFile(t *testing.T) {
 	mockStorage := new(MockStoragePort)
 	mockBucketRepo := new(MockBucketRepository)
 	mockFileRepo := new(MockFileRepository)
-	service := application.NewUploadService(mockStorage, mockBucketRepo, mockFileRepo, nil)
+	mockEvents := new(MockEventPublisher)
+	service := application.NewUploadService(mockStorage, mockBucketRepo, mockFileRepo, nil, mockEvents)
 
 	ownerID := "user-123"
 	ctx := withActor(context.Background(), ownerID)
@@ -218,7 +233,8 @@ func TestDownloadFile(t *testing.T) {
 	mockStorage := new(MockStoragePort)
 	mockBucketRepo := new(MockBucketRepository)
 	mockFileRepo := new(MockFileRepository)
-	service := application.NewUploadService(mockStorage, mockBucketRepo, mockFileRepo, nil)
+	mockEvents := new(MockEventPublisher)
+	service := application.NewUploadService(mockStorage, mockBucketRepo, mockFileRepo, nil, mockEvents)
 
 	ownerID := "user-123"
 	ctx := withActor(context.Background(), ownerID)

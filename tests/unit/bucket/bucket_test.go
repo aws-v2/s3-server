@@ -3,6 +3,7 @@ package bucket_test
 import (
 	"context"
 	"errors"
+	"io"
 	"s3/internal/application"
 	"s3/internal/domain"
 	"s3/internal/infrastructure/dto"
@@ -122,6 +123,9 @@ type MockStoragePort struct {
 }
 
 func (m *MockStoragePort) SaveObject(ctx context.Context, bucket, key string, data []byte, metadata map[string]string) error {
+	return nil
+}
+func (m *MockStoragePort) SaveObjectReader(ctx context.Context, bucket, key string, reader io.Reader, size int64, metadata map[string]string) error {
 	return nil
 }
 func (m *MockStoragePort) GetObject(ctx context.Context, bucket, key string) ([]byte, error) {

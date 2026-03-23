@@ -2,6 +2,7 @@ package domain
 
 import (
 	"context"
+	"io"
 	"time"
 )
 
@@ -11,6 +12,7 @@ type JWTValidator interface {
 
 type StoragePort interface {
 	SaveObject(ctx context.Context, bucket, key string, data []byte, metadata map[string]string) error
+	SaveObjectReader(ctx context.Context, bucket, key string, reader io.Reader, size int64, metadata map[string]string) error
 	GetObject(ctx context.Context, bucket, key string) ([]byte, error)
 	DeleteObject(ctx context.Context, bucket, key string) error
 	CreateBucket(ctx context.Context, name string) (string, error)
@@ -187,7 +189,6 @@ type SystemPort interface {
 
 type EventPublisher interface {
 	Publish(ctx context.Context, topic string, payload interface{}) error
-	Consume(ctx context.Context, topic string) error
 }
 
 type TokenProvider interface {

@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -18,15 +19,92 @@ type UploadService struct {
 	bucketRepo domain.BucketRepository
 	fileRepo   domain.FileRepository
 	metrics    *metrics.MetricsClient
+	events     domain.EventPublisher
 }
 
-func NewUploadService(storage domain.StoragePort, bucketRepo domain.BucketRepository, fileRepo domain.FileRepository, metrics *metrics.MetricsClient) *UploadService {
+func NewUploadService(
+	storage domain.StoragePort,
+	bucketRepo domain.BucketRepository,
+	fileRepo domain.FileRepository,
+	metrics *metrics.MetricsClient,
+	events domain.EventPublisher,
+) *UploadService {
 	return &UploadService{
 		storage:    storage,
 		bucketRepo: bucketRepo,
 		fileRepo:   fileRepo,
 		metrics:    metrics,
+		events:     events,
 	}
+}
+
+// UploadObjectReader uploads an object from a reader and emits a stored event if it's a game file.
+func (s *UploadService) UploadObjectReader(ctx context.Context, bucketID, key string, reader io.Reader, size int64, contentType string, metadata map[string]string) error {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	// Resolve bucket
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
+	if err != nil {
+		return err
+	}
+
+	// Save object to storage
+	err = s.storage.SaveObjectReader(ctx, bucket.StorageName, key, reader, size, metadata)
+	if err != nil {
+		return fmt.Errorf("failed to save object %s: %w", key, err)
+	}
+
+	// Save file metadata in DB
+	file := domain.File{
+		ID:        generateID(),
+		BucketID:  bucket.ID,
+		Key:       key,
+		Size:      size,
+		MimeType:  contentType,
+		Metadata:  metadata,
+		CreatedAt: time.Now(),
+	}
+
+	err = s.fileRepo.SaveFile(ctx, file)
+	if err != nil {
+		return fmt.Errorf("failed to save file metadata for %s: %w", key, err)
+	}
+
+	// Emit metrics
+	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
+		PutRequests:   1,
+		BytesUploaded: size,
+	})
+
+	// Check if this is a game file and emit stored event
+	// Pattern: uploads/games/{game_id}/game.mp4
+	if strings.HasPrefix(key, "uploads/games/") && strings.HasSuffix(key, "/game.mp4") {
+		parts := strings.Split(key, "/")
+		if len(parts) >= 3 {
+			gameIDStr := parts[2]
+			var gameID int
+			fmt.Sscanf(gameIDStr, "%d", &gameID)
+
+			if gameID > 0 {
+				event := map[string]interface{}{
+					"game_id": gameID,
+					"s3_arn":  fmt.Sprintf("arn:serw:s3:%s:%s:object/%s/%s", bucket.Region, bucket.OwnerID, bucket.Name, key),
+					"status":  "success",
+				}
+				if err := s.events.Publish(ctx, "dev.s3.v1.game.stored", event); err != nil {
+					fmt.Printf("[S3] Error publishing stored event: %v\n", err)
+				} else {
+					fmt.Printf("[S3] Upload finalized for Game %d\n", gameID)
+				}
+			}
+		}
+	}
+
+	return nil
 }
 
 type UploadFileInput struct {

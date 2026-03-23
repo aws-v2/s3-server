@@ -149,7 +149,11 @@ func NewMinIOAdapter(endpoint, accessKey, secretKey string, useSSL bool) (*MinIO
 // SaveObject implements domain.StoragePort
 func (m *MinIOAdapter) SaveObject(ctx context.Context, bucket, key string, data []byte, metadata map[string]string) error {
 	reader := bytes.NewReader(data)
+	return m.SaveObjectReader(ctx, bucket, key, reader, int64(len(data)), metadata)
+}
 
+// SaveObjectReader implements domain.StoragePort
+func (m *MinIOAdapter) SaveObjectReader(ctx context.Context, bucket, key string, reader io.Reader, size int64, metadata map[string]string) error {
 	// Ensure bucket exists
 	exists, err := m.client.BucketExists(ctx, bucket)
 	if err != nil {
@@ -163,9 +167,9 @@ func (m *MinIOAdapter) SaveObject(ctx context.Context, bucket, key string, data 
 	}
 
 	// Upload object
-	_, err = m.client.PutObject(ctx, bucket, key, reader, int64(len(data)), minio.PutObjectOptions{
+	_, err = m.client.PutObject(ctx, bucket, key, reader, size, minio.PutObjectOptions{
 		UserMetadata: metadata,
-		ContentType:  "application/octet-stream",
+		ContentType:  "application/octet-stream", // Fallback, could be improved
 	})
 	if err != nil {
 		return fmt.Errorf("failed to put object: %w", err)

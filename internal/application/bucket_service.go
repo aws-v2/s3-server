@@ -162,6 +162,21 @@ func (s *BucketService) resolveBucket(ctx context.Context, idOrName string, filt
 	return domain.Bucket{}, fmt.Errorf("bucket not found: %s", idOrName)
 }
 
+func (s *BucketService) GetBucketByName(ctx context.Context, name string) (*domain.Bucket, error) {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	bucket, err := s.bucketRepo.GetBucketByName(ctx, name, filterID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &bucket, nil
+}
+
 func (s *BucketService) GetBucket(ctx context.Context, bucketID string) (*dto.GetBucketOutput, error) {
 	actor, _ := ctx.Value("actor").(domain.Actor)
 	filterID := actor.ID

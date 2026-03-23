@@ -15,6 +15,7 @@ import (
 	"s3/internal/infrastructure/system"
 	"s3/internal/middleware"
 	"s3/internal/transport/http"
+	"s3/internal/transport/nats"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -229,7 +230,7 @@ func main() {
 
 	// 2. Initialize Application Layer (Services)
 	log.Println("Initializing services...")
-	uploadService := application.NewUploadService(minioAdapter, postgresRepo, postgresRepo, metricsClient)
+	uploadService := application.NewUploadService(minioAdapter, postgresRepo, postgresRepo, metricsClient, natsAdapter)
 	bucketService := application.NewBucketService(postgresRepo, postgresRepo, postgresRepo, minioAdapter, metricsClient)
 	deleteService := application.NewDeleteService(minioAdapter, postgresRepo, postgresRepo, metricsClient)
 	healthService := application.NewHealthService(postgresRepo, minioAdapter, sys)
@@ -249,7 +250,7 @@ func main() {
 		File:        http.NewFileHandler(uploadService, deleteService),
 		Bucket:      http.NewBucketHandler(bucketService),
 		Health:      http.NewHealthHandler(healthService),
-		Presign:     http.NewPresignHandler(presignedService),   // TODO: implement later
+		Presign:     http.NewPresignHandler(presignedService, uploadService),
 		Batch:       http.NewBatchHandler(batchService),         // TODO: implement later
 		Prefix:      http.NewPrefixHandler(prefixService),       // TODO: implement later
 		Search:      http.NewSearchHandler(SearchService),       // TODO: implement later
@@ -261,6 +262,13 @@ func main() {
 		// Auth:         http.NewAuthHandler(authService),           // JWT authentication handler
 		Validator:    iamValidator, // IAM/API Key validator
 		JWTValidator: nil,          // JWT validator removed
+	}
+	
+	// Initialize and start NATS controllers
+	log.Println("Initializing NATS controllers...")
+	presignController := nats.NewPresignController(natsAdapter.GetConnection(), presignedService, bucketService)
+	if err := presignController.Start(); err != nil {
+		log.Printf("Warning: failed to start NATS presign controller: %v", err)
 	}
 
 	// 4. Setup Router

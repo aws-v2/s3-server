@@ -107,7 +107,7 @@ func (s *PresignService) GenerateUploadURL(ctx context.Context, input dto.Genera
 }
 
 func (s *PresignService) generateSignedURL(urlID, bucket, key, method string, expiresAt time.Time) string {
-	baseURL := fmt.Sprintf("/api/v1/buckets/%s/objects/%s", bucket, key)
+	baseURL := fmt.Sprintf("/api/v1/s3/buckets/%s/objects/%s", bucket, key)
 	params := fmt.Sprintf("urlId=%s&expires=%d&method=%s", urlID, expiresAt.Unix(), method)
 
 	signature := s.signString(params)
@@ -366,7 +366,7 @@ func (s *PresignService) generateMultipartSignedURL(urlID, bucketName, key strin
 	hash.Write([]byte(data))
 	signature := hex.EncodeToString(hash.Sum(nil))
 
-	return fmt.Sprintf("/api/v1/buckets/%s/objects/%s?urlId=%s&part=%d&expires=%d&method=%s&signature=%s",
+	return fmt.Sprintf("/api/v1/s3/buckets/%s/objects/%s?urlId=%s&part=%d&expires=%d&method=%s&signature=%s",
 		bucketName, key, urlID, partNumber, expires, method, signature)
 }
 
