@@ -16,13 +16,24 @@ import (
 )
 
 type createPresignedURLRequest struct {
-	GameID int    `json:"game_id"`
-	UserID string `json:"user_id"`
-	ARN    string `json:"arn"`
+	GameID    int    `json:"game_id"`
+	UserID    string `json:"user_id"`
+	ARN       string `json:"arn"`
+	Extension string `json:"extension"`
 }
 
 type createPresignedURLResponse struct {
 	UploadURL string `json:"upload_url"`
+}
+
+type getDownloadURLRequest struct {
+	GameID int    `json:"game_id"`
+	UserID string `json:"user_id"`
+	Key    string `json:"key"`
+}
+
+type getDownloadURLResponse struct {
+	DownloadURL string `json:"download_url"`
 }
 
 type PresignController struct {
@@ -52,7 +63,14 @@ func (c *PresignController) Start() error {
 	if err != nil {
 		return fmt.Errorf("failed to subscribe to %s: %w", subject, err)
 	}
-	log.Printf("[S3] NATS Listener started for subject: %s", subject)
+
+	downloadSubj := "dev.api.v1.s3.get_download_url"
+	_, err = c.conn.Subscribe(downloadSubj, c.handleGetDownloadURL)
+	if err != nil {
+		return fmt.Errorf("failed to subscribe to %s: %w", downloadSubj, err)
+	}
+
+	log.Printf("[S3] NATS Listener started for subjects: %s, %s", subject, downloadSubj)
 	return nil
 }
 
@@ -103,8 +121,12 @@ func (c *PresignController) handleCreatePresignedURL(msg *nats.Msg) {
 	}
 
 	// Generate presigned URL
-	// Path: uploads/games/{game_id}/game.mp4
-	key := fmt.Sprintf("uploads/games/%d/game.mp4", req.GameID)
+	// Path: uploads/games/{game_id}/game{extension}
+	ext := req.Extension
+	if ext == "" {
+		ext = ".zip"
+	}
+	key := fmt.Sprintf("uploads/games/%d/game%s", req.GameID, ext)
 	presignInput := dto.GenerateUploadURLInput{
 		BucketID:  bucketID,
 		Key:       key,
@@ -127,6 +149,38 @@ func (c *PresignController) handleCreatePresignedURL(msg *nats.Msg) {
 	}
 
 	log.Printf("[S3] Presigned URL generated for Game %d", req.GameID)
+}
+
+func (c *PresignController) handleGetDownloadURL(msg *nats.Msg) {
+	var req getDownloadURLRequest
+	if err := json.Unmarshal(msg.Data, &req); err != nil {
+		log.Printf("[S3] Error unmarshaling NATS request: %v", err)
+		return
+	}
+
+	ctx := context.Background()
+	actor := domain.Actor{ID: req.UserID}
+	ctx = context.WithValue(ctx, "actor", actor)
+
+	// In this simple implementation, we assume Key is provided or derived
+	if req.Key == "" {
+		req.Key = fmt.Sprintf("uploads/games/%d/game.zip", req.GameID)
+	}
+
+	// For simplicity, we skip FileID lookup and use the direct storage port signed URL
+	// since we want an internal download link for the backend.
+	bucketName := "gamelift_games"
+	expiresAt := time.Now().Add(15 * time.Minute)
+	
+	// We use the internal generateSignedURL directly
+	url := c.presignService.GenerateInternalURL(bucketName, req.Key, "GET", expiresAt)
+
+	resp := getDownloadURLResponse{
+		DownloadURL: url,
+	}
+
+	respData, _ := json.Marshal(resp)
+	c.conn.Publish(msg.Reply, respData)
 }
 
 func (c *PresignController) ensureUserExists(ctx context.Context, userID string) error {

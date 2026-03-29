@@ -106,6 +106,11 @@ func (s *PresignService) GenerateUploadURL(ctx context.Context, input dto.Genera
 	}, nil
 }
 
+func (s *PresignService) GenerateInternalURL(bucket, key, method string, expiresAt time.Time) string {
+	urlID := uuid.New().String()
+	return s.generateSignedURL(urlID, bucket, key, method, expiresAt)
+}
+
 func (s *PresignService) generateSignedURL(urlID, bucket, key, method string, expiresAt time.Time) string {
 	baseURL := fmt.Sprintf("/api/v1/s3/buckets/%s/objects/%s", bucket, key)
 	params := fmt.Sprintf("urlId=%s&expires=%d&method=%s", urlID, expiresAt.Unix(), method)

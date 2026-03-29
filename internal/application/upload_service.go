@@ -21,6 +21,7 @@ type UploadService struct {
 	fileRepo   domain.FileRepository
 	metrics    *metrics.MetricsClient
 	events     domain.EventPublisher
+	presign    *PresignService
 }
 
 func NewUploadService(
@@ -29,6 +30,7 @@ func NewUploadService(
 	fileRepo domain.FileRepository,
 	metrics *metrics.MetricsClient,
 	events domain.EventPublisher,
+	presign *PresignService,
 ) *UploadService {
 	return &UploadService{
 		storage:    storage,
@@ -36,6 +38,7 @@ func NewUploadService(
 		fileRepo:   fileRepo,
 		metrics:    metrics,
 		events:     events,
+		presign:    presign,
 	}
 }
 
@@ -87,39 +90,37 @@ func (s *UploadService) UploadObjectReader(ctx context.Context, bucketID, key st
 	// Normalize key (handle leading slash)
 	cleanKey := strings.TrimPrefix(key, "/")
 
-	// Pattern: uploads/games/{game_id}/game.mp4
-	if strings.HasPrefix(cleanKey, "uploads/games/") && strings.HasSuffix(cleanKey, "/game.mp4") {
-		log.Printf("[S3] Key %s matches game file pattern", cleanKey)
+	// Pattern: uploads/games/{game_id}/game.zip (or any extension)
+	isGameFile := strings.HasPrefix(cleanKey, "uploads/games/") && 
+		(strings.HasSuffix(cleanKey, ".mp4") || strings.HasSuffix(cleanKey, ".zip"))
+	
+	if isGameFile || bucket.Name == "gamelift_games" {
+		log.Printf("[S3] Recognized game-related upload in bucket %s, key %s", bucket.Name, cleanKey)
 		parts := strings.Split(cleanKey, "/")
 		if len(parts) >= 3 {
 			gameIDStr := parts[2]
 			var gameID int
 			_, err := fmt.Sscanf(gameIDStr, "%d", &gameID)
-			if err != nil {
-				log.Printf("[S3] Error parsing game ID from %s: %v", gameIDStr, err)
-			}
+			
+			if err == nil && gameID > 0 {
+				// Generate internal download URL for the backend/ec2 (valid for 1 hour)
+				downloadURL := s.presign.GenerateInternalURL(bucket.Name, cleanKey, "GET", time.Now().Add(1*time.Hour))
 
-			if gameID > 0 {
 				event := map[string]interface{}{
-					"game_id": gameID,
-					"s3_arn":  fmt.Sprintf("arn:aws:s3:::%s/%s", bucket.Name, cleanKey),
-					"status":  "success",
+					"game_id":      gameID,
+					"s3_arn":       fmt.Sprintf("arn:aws:s3:::%s/%s", bucket.StorageName, cleanKey),
+					"download_url": downloadURL,
+					"status":       "success",
 				}
-				log.Printf("[S3] Publishing stored event for Game %d to dev.s3.v1.game.stored (Core NATS)", gameID)
-				if err := s.events.PublishRaw(ctx, "dev.s3.v1.game.stored", event); err != nil {
-					log.Printf("[S3] Error publishing stored event: %v", err)
+				subj := "dev.s3.v1.game.stored"
+				log.Printf("[S3] Publishing completion event for Game %d to %s with internal link", gameID, subj)
+				if err := s.events.PublishRaw(ctx, subj, event); err != nil {
+					log.Printf("[S3] ERROR: Failed to publish NATS event: %v", err)
 				} else {
-					log.Printf("[S3] Upload finalized for Game %d: %s", gameID, event["s3_arn"])
+					log.Printf("[S3] Successfully notified backend. Internal Link: %s", downloadURL)
 				}
-			} else {
-				log.Printf("[S3] Parsed gameID is 0 or invalid")
 			}
-		} else {
-			log.Printf("[S3] Key parts length %d too short", len(parts))
 		}
-	} else {
-		log.Printf("[S3] Key %s does NOT match game file pattern (Prefix: %v, Suffix: %v)", 
-			cleanKey, strings.HasPrefix(cleanKey, "uploads/games/"), strings.HasSuffix(cleanKey, "/game.mp4"))
 	}
 
 	return nil

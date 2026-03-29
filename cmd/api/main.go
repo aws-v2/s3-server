@@ -230,11 +230,11 @@ func main() {
 
 	// 2. Initialize Application Layer (Services)
 	log.Println("Initializing services...")
-	uploadService := application.NewUploadService(minioAdapter, postgresRepo, postgresRepo, metricsClient, natsAdapter)
+	presignedService := application.NewPresignService(postgresRepo, postgresRepo, postgresRepo, postgresRepo, minioAdapter, metricsClient, cfg.S3.SecretKey)
+	uploadService := application.NewUploadService(minioAdapter, postgresRepo, postgresRepo, metricsClient, natsAdapter, presignedService)
 	bucketService := application.NewBucketService(postgresRepo, postgresRepo, postgresRepo, minioAdapter, metricsClient)
 	deleteService := application.NewDeleteService(minioAdapter, postgresRepo, postgresRepo, metricsClient)
 	healthService := application.NewHealthService(postgresRepo, minioAdapter, sys)
-	presignedService := application.NewPresignService(postgresRepo, postgresRepo, postgresRepo, postgresRepo, minioAdapter, metricsClient, cfg.S3.SecretKey)
 	batchService := application.NewBatchService(postgresRepo, postgresRepo, postgresRepo, minioAdapter, metricsClient)
 	prefixService := application.NewPrefixService(postgresRepo, postgresRepo, minioAdapter, metricsClient)
 	SearchService := application.NewSearchService(postgresRepo, postgresRepo)
@@ -251,17 +251,16 @@ func main() {
 		Bucket:      http.NewBucketHandler(bucketService),
 		Health:      http.NewHealthHandler(healthService),
 		Presign:     http.NewPresignHandler(presignedService, uploadService),
-		Batch:       http.NewBatchHandler(batchService),         // TODO: implement later
-		Prefix:      http.NewPrefixHandler(prefixService),       // TODO: implement later
-		Search:      http.NewSearchHandler(SearchService),       // TODO: implement later
-		Webhook:     http.NewWebhookHandler(webhookService),     // TODO: implement later
-		Analytics:   http.NewAnalyticsHandler(analyticsService), // TODO: implement later
-		Multipart:   http.NewMultipartHandler(multipartService), // TODO: implement later
+		Batch:       http.NewBatchHandler(batchService),         
+		Prefix:      http.NewPrefixHandler(prefixService),       
+		Search:      http.NewSearchHandler(SearchService),       
+		Webhook:     http.NewWebhookHandler(webhookService),     
+		Analytics:   http.NewAnalyticsHandler(analyticsService), 
+		Multipart:   http.NewMultipartHandler(multipartService), 
 		AccessPoint: http.NewAccessPointHandler(accessPointService),
 		Security:    http.NewSecurityHandler(securityService),
-		// Auth:         http.NewAuthHandler(authService),           // JWT authentication handler
-		Validator:    iamValidator, // IAM/API Key validator
-		JWTValidator: nil,          // JWT validator removed
+		Validator:    iamValidator, 
+		JWTValidator: nil,          
 	}
 	
 	// Initialize and start NATS controllers
