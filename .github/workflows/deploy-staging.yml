@@ -24,9 +24,7 @@ jobs:
       with:
         context: .
         push: true
-        tags: qarani/auth-server:staging
-        build-args: |
-          SPRING_PROFILES_ACTIVE=staging
+        tags: qarani/s3-server:staging
 
   deploy:
     needs: build-and-push
@@ -47,10 +45,11 @@ jobs:
           key: ${{ secrets.STAGING_SSH_KEY }}
           script: |
             docker network create mini-aws-network || true
-            docker pull qarani/auth-server:staging
-            docker stop auth-server-staging || true
-            docker rm auth-server-staging || true
-            docker run -d --name auth-server-staging \
+            docker pull qarani/s3-server:staging
+            docker stop s3-server-staging || true
+            docker rm s3-server-staging || true
+            docker run -d --name s3-server-staging \
               --network mini-aws-network \
-              -p 8081:8081 \
-              qarani/auth-server:staging
+              -p 8082:8099 \
+              -e SERVER_PORT=8099 \
+              qarani/s3-server:staging

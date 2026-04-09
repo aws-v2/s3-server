@@ -25,9 +25,7 @@ jobs:
         with:
           context: .
           push: true
-          tags: qarani/auth-server:latest
-          build-args: |
-            SPRING_PROFILES_ACTIVE=prod
+          tags: qarani/s3-server:latest
 
   deploy:
     needs: build-and-push
@@ -41,7 +39,7 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
-          source: ".auth-server-prod.env"
+          source: ".s3-server-prod.env"
           target: "/home/${{ secrets.EC2_USERNAME }}/"
 
       - name: Deploy to EC2 via SSH
@@ -51,13 +49,14 @@ jobs:
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            echo "${{ secrets.AUTH_SERVER_PROD_ENV }}" > /home/${{ secrets.EC2_USERNAME }}/.auth-server-prod.env
-            docker pull qarani/auth-server:latest
-            docker stop auth-server || true
-            docker rm auth-server || true
+            echo "${{ secrets.S3_SERVER_PROD_ENV }}" > /home/${{ secrets.EC2_USERNAME }}/.s3-server-prod.env
+            docker pull qarani/s3-server:latest
+            docker stop s3-server || true
+            docker rm s3-server || true
             docker network create mini-aws-network || true
-            docker run -d --name auth-server \
+            docker run -d --name s3-server \
               --network mini-aws-network \
-              --env-file /home/${{ secrets.EC2_USERNAME }}/.auth-server-prod.env \
-              -p 8081:8081 \
-              qarani/auth-server:latest
+              --env-file /home/${{ secrets.EC2_USERNAME }}/.s3-server-prod.env \
+              -p 8082:8099 \
+              -e SERVER_PORT=8099 \
+              qarani/s3-server:latest
