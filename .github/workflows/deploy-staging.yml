@@ -44,24 +44,32 @@ jobs:
           username: ${{ secrets.STAGING_USERNAME }}
           key: ${{ secrets.STAGING_SSH_KEY }}
           script: |
-            docker network create mini-aws-network || true
+            docker network create aws-staging-network || true
             docker pull qarani/s3-server:staging
             docker stop s3-server-staging || true
             docker rm s3-server-staging || true
             docker run -d --name s3-server-staging \
-              --network mini-aws-network \
+              --network aws-staging-network \
               -p 8082:8099 \
               -e APP_PROFILE=staging \
               -e SERVER_PORT=8099 \
               -e POSTGRES_HOST=postgres-staging \
               -e POSTGRES_PORT=5432 \
               -e POSTGRES_USER=root \
-              -e POSTGRES_PASSWORD=${{ secrets.STAGING_DB_PASSWORD }} \
+              -e POSTGRES_PASSWORD=staging_db_password \
               -e POSTGRES_DB=s3 \
+              -e POSTGRES_SSL_MODE=disable \
               -e NATS_URL=nats://nats-staging:4222 \
               -e NATS_USER=auth-server \
               -e NATS_PASSWORD=auth-secret \
               -e MINIO_ENDPOINT=minio-staging:9000 \
-              -e MINIO_ACCESS_KEY=${{ secrets.STAGING_MINIO_ACCESS_KEY }} \
-              -e MINIO_SECRET_KEY=${{ secrets.STAGING_MINIO_SECRET_KEY }} \
+              -e MINIO_ACCESS_KEY=staging_minio_access_key \
+              -e MINIO_SECRET_KEY=staging_minio_secret_key \
+              -e MINIO_USE_SSL=false \
+              -e EUREKA_SERVER_URL=http://eureka-staging:8761/eureka \
+              -e EUREKA_APP_NAME=S3-SERVICE \
+              -e EUREKA_HOSTNAME=s3-server-staging \
+              -e EUREKA_IP_ADDR=127.0.0.1 \
+              -e EUREKA_VIP_ADDRESS=s3-service \
+              -e EUREKA_INSTANCE_ID=s3-service-staging:8099 \
               qarani/s3-server:staging
