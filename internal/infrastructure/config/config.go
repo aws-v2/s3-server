@@ -9,11 +9,12 @@ import (
 )
 
 type Config struct {
-	ServerPort string
-	Eureka     EurekaConfig
-	Database   DatabaseConfig
-	NATS       NATSConfig
-	S3         S3Config
+	APP_PROFILE string
+	ServerPort  string
+	Eureka      EurekaConfig
+	Database    DatabaseConfig
+	NATS        NATSConfig
+	S3          S3Config
 }
 
 type EurekaConfig struct {
@@ -59,12 +60,14 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("failed to load base config: %w", err)
 	}
 
+	appProfile := getEnv("APP_PROFILE", "dev")
 	serverPort := getEnv("SERVER_PORT", "8082")
 
 	return &Config{
-		ServerPort: serverPort,
+		APP_PROFILE: appProfile,
+		ServerPort:  serverPort,
 		Eureka: EurekaConfig{
-			ServerURL:         getEnv("EUREKA_SERVER_URL", "http://localhost:8761/eureka"),
+			ServerURL:         getEnv("EUREKA_SERVER_URL", ""),
 			AppName:           getEnv("EUREKA_APP_NAME", "S3-SERVICE"),
 			HostName:          getEnv("EUREKA_HOSTNAME", "localhost"),
 			IPAddr:            getEnv("EUREKA_IP_ADDR", "127.0.0.1"),

@@ -3,13 +3,16 @@ package main
 import (
 	"database/sql"
 	"fmt"
-	"log"
+	"log/slog"
+	"os"
 	"s3/internal/application"
 
 	"s3/internal/infrastructure/config"
 	"s3/internal/infrastructure/database"
 	"s3/internal/infrastructure/event"
+	"s3/internal/infrastructure/logging"
 	"s3/internal/infrastructure/metrics"
+	"s3/internal/infrastructure/network"
 	"s3/internal/infrastructure/repository"
 	"s3/internal/infrastructure/storage"
 	"s3/internal/infrastructure/system"
@@ -77,7 +80,7 @@ func registerWithEureka(config config.EurekaConfig) error {
 		return fmt.Errorf("eureka registration failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	log.Printf("✅ Successfully registered with Eureka server at %s", url)
+	slog.Info("Successfully registered with Eureka server", slog.String("url", url))
 	return nil
 }
 
@@ -92,21 +95,21 @@ func sendHeartbeat(config config.EurekaConfig) {
 	for range ticker.C {
 		req, err := httpd.NewRequest("PUT", url, nil)
 		if err != nil {
-			log.Printf("❌ Failed to create heartbeat request: %v", err)
+			slog.Error("Failed to create heartbeat request", slog.Any("error", err))
 			continue
 		}
 
 		resp, err := client.Do(req)
 		if err != nil {
-			log.Printf("❌ Failed to send heartbeat to Eureka: %v", err)
+			slog.Error("Failed to send heartbeat to Eureka", slog.Any("error", err))
 			continue
 		}
 
 		if resp.StatusCode != httpd.StatusOK && resp.StatusCode != httpd.StatusNoContent {
 			body, _ := io.ReadAll(resp.Body)
-			log.Printf("⚠️  Heartbeat failed with status %d: %s", resp.StatusCode, string(body))
+			slog.Warn("Heartbeat failed", slog.Int("status", resp.StatusCode), slog.String("body", string(body)))
 		} else {
-			log.Printf("💓 Heartbeat sent successfully to Eureka")
+			slog.Debug("Heartbeat sent successfully to Eureka")
 		}
 
 		resp.Body.Close()
@@ -133,20 +136,24 @@ func deregisterFromEureka(config config.EurekaConfig) error {
 		return fmt.Errorf("deregistration failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	log.Printf("✅ Successfully deregistered from Eureka server")
+	slog.Info("Successfully deregistered from Eureka server")
 	return nil
 }
 
 func main() {
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+		panic(fmt.Sprintf("Failed to load config: %v", err))
 	}
+
+	// Initialize Logger
+	logging.InitLogger(cfg.APP_PROFILE)
+	slog.Info("Application starting", slog.String("profile", cfg.APP_PROFILE))
 
 	// Register with retries
 	for i := 0; i < 3; i++ {
 		if err := registerWithEureka(cfg.Eureka); err != nil {
-			log.Printf("⚠️  Eureka registration attempt %d failed: %v", i+1, err)
+			slog.Warn("Eureka registration attempt failed", slog.Int("attempt", i+1), slog.Any("error", err))
 			time.Sleep(5 * time.Second)
 		} else {
 			break
@@ -156,7 +163,20 @@ func main() {
 	// Start heartbeat
 	go sendHeartbeat(cfg.Eureka)
 
-	log.Println("Initializing MinIO adapter...")
+	// Pre-requisite reachability checks
+	slog.Info("Performing reachability checks...")
+	
+	if err := network.CheckReachability("localhost", 4222, 5, 2*time.Second); err != nil {
+		slog.Error("FATAL: NATS unreachable", slog.Any("error", err))
+		os.Exit(1)
+	}
+
+	if err := network.CheckReachability(cfg.Database.Host, cfg.Database.Port, 5, 2*time.Second); err != nil {
+		slog.Error("FATAL: Database unreachable", slog.Any("error", err))
+		os.Exit(1)
+	}
+
+	slog.Info("Initializing MinIO adapter...")
 	minioAdapter, err := storage.NewMinIOAdapter(
 		cfg.S3.Endpoint,
 		cfg.S3.AccessKey,
@@ -164,8 +184,18 @@ func main() {
 		cfg.S3.UseSSL,
 	)
 	if err != nil {
-		log.Fatalf("Failed to create MinIO adapter: %v", err)
+		slog.Error("Failed to create MinIO adapter", slog.Any("error", err))
+		os.Exit(1)
 	}
+
+	// Initialize NATS connection FIRST for IAM integration
+	slog.Info("Connecting to NATS...", slog.String("url", cfg.NATS.URL))
+	natsAdapter, err := event.NewNATSAdapter(cfg.NATS.URL, cfg.NATS.User, cfg.NATS.Password, cfg.APP_PROFILE)
+	if err != nil {
+		slog.Error("Failed to connect to NATS", slog.Any("error", err))
+		os.Exit(1)
+	}
+	defer natsAdapter.Close()
 
 	dbConfig := database.Config{
 		Host:            cfg.Database.Host,
@@ -180,40 +210,35 @@ func main() {
 		ConnMaxIdleTime: cfg.Database.ConnMaxIdleTime,
 	}
 
-	log.Println("Connecting to PostgreSQL...")
+	slog.Info("Connecting to PostgreSQL...")
 	db, err := database.NewPostgresDB(dbConfig)
 	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
+		slog.Error("Failed to connect to database", slog.Any("error", err))
+		os.Exit(1)
 	}
 
 	go monitorDBStats(db)
 	postgresRepo := repository.NewPostgresRepository(db)
 
-	// Initialize NATS connection for IAM integration
-	log.Printf("Connecting to NATS at %s...", cfg.NATS.URL)
-	natsAdapter, err := event.NewNATSAdapter(cfg.NATS.URL, cfg.NATS.User, cfg.NATS.Password)
-	if err != nil {
-		log.Fatalf("Failed to connect to NATS: %v", err)
-	}
-	defer natsAdapter.Close()
-
 	// Create IAM validator
 	iamValidator := middleware.NewIAMValidator(natsAdapter.GetConnection())
 
 	// Run migrations
-	log.Println("Running database migrations...")
+	slog.Info("Running database migrations...")
 	version, dirty, err := database.GetMigrationVersion(db, dbConfig.Database)
 	if err == nil && dirty {
-		log.Printf("⚠️  Database is dirty at version %d. Forcing version to clear dirty flag...", version)
+		slog.Warn("Database is dirty, forcing version", slog.Uint64("version", uint64(version)))
 		if err := database.ForceVersion(db, dbConfig.Database, int(version)); err != nil {
-			log.Fatalf("Failed to force migration version: %v", err)
+			slog.Error("Failed to force migration version", slog.Any("error", err))
+			os.Exit(1)
 		}
 	}
 
 	if err := database.RunMigrations(db, dbConfig.Database); err != nil {
-		log.Fatalf("Failed to run migrations: %v", err)
+		slog.Error("Failed to run migrations", slog.Any("error", err))
+		os.Exit(1)
 	}
-	log.Println("Migrations completed successfully")
+	slog.Info("Migrations completed successfully")
 
 	// // Check current migration version (optional)
 	// version, dirty, err := database.GetMigrationVersion(db, dbConfig.Database)
@@ -229,7 +254,7 @@ func main() {
 	metricsClient := metrics.NewMetricsClient(natsAdapter, cfg.Eureka.InstanceID)
 
 	// 2. Initialize Application Layer (Services)
-	log.Println("Initializing services...")
+	slog.Info("Initializing services...")
 	presignedService := application.NewPresignService(postgresRepo, postgresRepo, postgresRepo, postgresRepo, minioAdapter, metricsClient, cfg.S3.SecretKey)
 	uploadService := application.NewUploadService(minioAdapter, postgresRepo, postgresRepo, metricsClient, natsAdapter, presignedService)
 	bucketService := application.NewBucketService(postgresRepo, postgresRepo, postgresRepo, minioAdapter, metricsClient)
@@ -245,7 +270,7 @@ func main() {
 	securityService := application.NewSecurityService(postgresRepo)
 
 	// 3. Initialize Transport Layer (HTTP)
-	log.Println("Initializing HTTP handlers...")
+	slog.Info("Initializing HTTP handlers...")
 	handlers := &http.Handlers{
 		File:        http.NewFileHandler(uploadService, deleteService),
 		Bucket:      http.NewBucketHandler(bucketService),
@@ -264,10 +289,10 @@ func main() {
 	}
 	
 	// Initialize and start NATS controllers
-	log.Println("Initializing NATS controllers...")
+	slog.Info("Initializing NATS controllers...")
 	presignController := nats.NewPresignController(natsAdapter.GetConnection(), presignedService, bucketService, postgresRepo)
 	if err := presignController.Start(); err != nil {
-		log.Printf("Warning: failed to start NATS presign controller: %v", err)
+		slog.Warn("Failed to start NATS presign controller", slog.Any("error", err))
 	}
 
 	// 4. Setup Router
@@ -275,14 +300,14 @@ func main() {
 	http.RegisterRoutes(router, handlers)
 
 	// 5. Start Server
-	log.Printf("🚀 Server starting on port %s...", cfg.ServerPort)
-	log.Printf("  - POST   /api/v1/buckets/:bucketId/files")
-	log.Printf("  - GET    /api/v1/buckets/:bucketId/files")
-	log.Printf("  - DELETE /api/v1/buckets/:bucketId/files/:fileId?key=<filename>")
-	log.Printf("  - GET    /health")
+	slog.Info("Server starting", slog.String("port", cfg.ServerPort))
+	slog.Info("Routes initialized", 
+		slog.String("upload", "/api/v1/buckets/:bucketId/files"),
+		slog.String("health", "/health"))
 
 	if err := router.Run(":" + cfg.ServerPort); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
+		slog.Error("Failed to start server", slog.Any("error", err))
+		os.Exit(1)
 	}
 
 }
@@ -293,7 +318,10 @@ func monitorDBStats(db *sql.DB) {
 
 	for range ticker.C {
 		stats := db.Stats()
-		log.Printf("DB Pool Stats - Open: %d, InUse: %d, Idle: %d, WaitCount: %d",
-			stats.OpenConnections, stats.InUse, stats.Idle, stats.WaitCount)
+		slog.Info("DB Pool Stats", 
+			slog.Int("open", stats.OpenConnections), 
+			slog.Int("in_use", stats.InUse), 
+			slog.Int("idle", stats.Idle), 
+			slog.Int("wait_count", int(stats.WaitCount)))
 	}
 }

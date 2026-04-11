@@ -33,14 +33,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Copy Env File to EC2
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USERNAME }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          source: ".s3-server-prod.env"
-          target: "/home/${{ secrets.EC2_USERNAME }}/"
 
       - name: Deploy to EC2 via SSH
         uses: appleboy/ssh-action@v1.0.3
@@ -49,14 +41,24 @@ jobs:
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            echo "${{ secrets.S3_SERVER_PROD_ENV }}" > /home/${{ secrets.EC2_USERNAME }}/.s3-server-prod.env
             docker pull qarani/s3-server:latest
             docker stop s3-server || true
             docker rm s3-server || true
             docker network create mini-aws-network || true
             docker run -d --name s3-server \
               --network mini-aws-network \
-              --env-file /home/${{ secrets.EC2_USERNAME }}/.s3-server-prod.env \
               -p 8082:8099 \
+              -e APP_PROFILE=prod \
               -e SERVER_PORT=8099 \
+              -e POSTGRES_HOST=postgres-prod \
+              -e POSTGRES_PORT=5432 \
+              -e POSTGRES_USER=root \
+              -e POSTGRES_PASSWORD=${{ secrets.PROD_DB_PASSWORD }} \
+              -e POSTGRES_DB=s3 \
+              -e NATS_URL=nats://nats-prod:4222 \
+              -e NATS_USER=auth-server \
+              -e NATS_PASSWORD=${{ secrets.PROD_NATS_PASSWORD }} \
+              -e MINIO_ENDPOINT=minio-prod:9000 \
+              -e MINIO_ACCESS_KEY=${{ secrets.PROD_MINIO_ACCESS_KEY }} \
+              -e MINIO_SECRET_KEY=${{ secrets.PROD_MINIO_SECRET_KEY }} \
               qarani/s3-server:latest

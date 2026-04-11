@@ -51,5 +51,17 @@ jobs:
             docker run -d --name s3-server-staging \
               --network mini-aws-network \
               -p 8082:8099 \
+              -e APP_PROFILE=staging \
               -e SERVER_PORT=8099 \
+              -e POSTGRES_HOST=postgres-staging \
+              -e POSTGRES_PORT=5432 \
+              -e POSTGRES_USER=root \
+              -e POSTGRES_PASSWORD=${{ secrets.STAGING_DB_PASSWORD }} \
+              -e POSTGRES_DB=s3 \
+              -e NATS_URL=nats://nats-staging:4222 \
+              -e NATS_USER=auth-server \
+              -e NATS_PASSWORD=auth-secret \
+              -e MINIO_ENDPOINT=minio-staging:9000 \
+              -e MINIO_ACCESS_KEY=${{ secrets.STAGING_MINIO_ACCESS_KEY }} \
+              -e MINIO_SECRET_KEY=${{ secrets.STAGING_MINIO_SECRET_KEY }} \
               qarani/s3-server:staging

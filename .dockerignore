@@ -1,0 +1,8 @@
+.git
+.github
+.env*
+Dockerfile
+README.md
+go.mod
+go.sum
+tests

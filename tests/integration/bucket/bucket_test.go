@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	baseURL = "http://localhost:8082/api/v1/s3"
+	baseURL = "http://localhost:8083/api/v1/s3"
 	jwt     = "eyJhbGciOiJIUzUxMiJ9.eyJ1c2VySWQiOiI5NzQ2OWVhNS04YWI0LTQ4YjAtYjlkNi0yN2NkMmZkZGFlNmYiLCJzdWIiOiJlbXFhcmFuaTFAZ21haWwuY29tIiwiaWF0IjoxNzczMjkyMTkwLCJleHAiOjE3NzMzNzg1OTB9.tjL7GjorcL29fEGIJBU9IubsEY3RRTHtsIyPM0MAPCtkZe_4eLC7ddUQfwX13OLFecBobVTmFIQpcT1Vui2IrA"
 )
 

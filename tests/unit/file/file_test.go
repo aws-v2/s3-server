@@ -152,6 +152,11 @@ func (m *MockEventPublisher) Publish(ctx context.Context, topic string, payload 
 	return args.Error(0)
 }
 
+func (m *MockEventPublisher) PublishRaw(ctx context.Context, topic string, payload interface{}) error {
+	args := m.Called(ctx, topic, payload)
+	return args.Error(0)
+}
+
 func (m *MockStoragePort) SaveObject(ctx context.Context, bucket, key string, data []byte, metadata map[string]string) error {
 	args := m.Called(ctx, bucket, key, data, metadata)
 	return args.Error(0)
@@ -197,7 +202,7 @@ func TestUploadFile(t *testing.T) {
 	mockBucketRepo := new(MockBucketRepository)
 	mockFileRepo := new(MockFileRepository)
 	mockEvents := new(MockEventPublisher)
-	service := application.NewUploadService(mockStorage, mockBucketRepo, mockFileRepo, nil, mockEvents)
+	service := application.NewUploadService(mockStorage, mockBucketRepo, mockFileRepo, nil, mockEvents, nil)
 
 	ownerID := "user-123"
 	ctx := withActor(context.Background(), ownerID)
@@ -234,7 +239,7 @@ func TestDownloadFile(t *testing.T) {
 	mockBucketRepo := new(MockBucketRepository)
 	mockFileRepo := new(MockFileRepository)
 	mockEvents := new(MockEventPublisher)
-	service := application.NewUploadService(mockStorage, mockBucketRepo, mockFileRepo, nil, mockEvents)
+	service := application.NewUploadService(mockStorage, mockBucketRepo, mockFileRepo, nil, mockEvents, nil)
 
 	ownerID := "user-123"
 	ctx := withActor(context.Background(), ownerID)

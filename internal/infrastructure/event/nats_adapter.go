@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"s3/internal/domain"
 	"time"
 
@@ -14,8 +14,9 @@ import (
 
 // NATSAdapter implements event publishing using NATS
 type NATSAdapter struct {
-	conn *nats.Conn
-	js   nats.JetStreamContext
+	conn    *nats.Conn
+	js      nats.JetStreamContext
+	profile string
 }
 
 // Event represents a domain event
@@ -28,20 +29,20 @@ type Event struct {
 }
 
 // NewNATSAdapter creates a new NATS event publisher
-func NewNATSAdapter(url, user, password string) (*NATSAdapter, error) {
+func NewNATSAdapter(url, user, password string, profile string) (*NATSAdapter, error) {
 	// Connect to NATS with resilient options
 	options := []nats.Option{
 		nats.RetryOnFailedConnect(true),
 		nats.MaxReconnects(-1), // Infinite reconnects
 		nats.ReconnectWait(2 * time.Second),
 		nats.DisconnectHandler(func(c *nats.Conn) {
-			log.Printf("[NATS] Warn: disconnected from NATS server")
+			slog.Warn("[NATS] disconnected from NATS server")
 		}),
 		nats.ReconnectHandler(func(c *nats.Conn) {
-			log.Printf("[NATS] Success: reconnected to NATS server at %s", c.ConnectedUrl())
+			slog.Info("[NATS] reconnected to NATS server", slog.String("url", c.ConnectedUrl()))
 		}),
 		nats.ClosedHandler(func(c *nats.Conn) {
-			log.Printf("[NATS] Critical: NATS connection closed permanently: %v", c.LastError())
+			slog.Error("[NATS] NATS connection closed permanently", slog.Any("error", c.LastError()))
 		}),
 	}
 
@@ -57,21 +58,26 @@ func NewNATSAdapter(url, user, password string) (*NATSAdapter, error) {
 	// Create JetStream context
 	js, err := conn.JetStream()
 	if err != nil {
-		log.Printf("[NATS] Warn: failed to create JetStream context (will retry lazy): %v", err)
-		// We DON'T call conn.Close() here anymore, so the base connection survives
+		slog.Warn("[NATS] failed to create JetStream context (will retry lazy)", slog.Any("error", err))
 	}
 
 	adapter := &NATSAdapter{
-		conn: conn,
-		js:   js,
+		conn:    conn,
+		js:      js,
+		profile: profile,
 	}
 
 	// Initialize streams
 	if err := adapter.initializeStreams(); err != nil {
-		log.Printf("Warning: failed to initialize streams: %v", err)
+		slog.Warn("failed to initialize streams", slog.Any("error", err))
 	}
 
 	return adapter, nil
+}
+
+// BuildSubject constructs a standardized NATS subject: <profile>.<service>.<version>.<domain>.<action>
+func (n *NATSAdapter) BuildSubject(version, domain, action string) string {
+	return fmt.Sprintf("%s.s3.%s.%s.%s", n.profile, version, domain, action)
 }
 
 // initializeStreams creates necessary JetStream streams
@@ -82,15 +88,15 @@ func (n *NATSAdapter) initializeStreams() error {
 	}{
 		{
 			name:     "S3_EVENTS",
-			subjects: []string{"s3.events.>"},
+			subjects: []string{fmt.Sprintf("%s.s3.v1.events.>", n.profile)},
 		},
 		{
 			name:     "FILE_EVENTS",
-			subjects: []string{"s3.files.>"},
+			subjects: []string{fmt.Sprintf("%s.s3.v1.files.>", n.profile)},
 		},
 		{
 			name:     "BUCKET_EVENTS",
-			subjects: []string{"s3.buckets.>"},
+			subjects: []string{fmt.Sprintf("%s.s3.v1.buckets.>", n.profile)},
 		},
 	}
 
@@ -111,7 +117,7 @@ func (n *NATSAdapter) initializeStreams() error {
 		if err != nil {
 			return fmt.Errorf("failed to create stream %s: %w", stream.name, err)
 		}
-		log.Printf("Created JetStream stream: %s", stream.name)
+		slog.Info("Created JetStream stream", slog.String("name", stream.name))
 	}
 
 	return nil
@@ -155,7 +161,7 @@ func (n *NATSAdapter) PublishEvent(ctx context.Context, event Event) error {
 		event.Timestamp = time.Now()
 	}
 
-	topic := fmt.Sprintf("s3.events.%s", event.Type)
+	topic := n.BuildSubject("v1", "events", event.Type)
 	return n.Publish(ctx, topic, event)
 }
 
@@ -173,7 +179,7 @@ func (n *NATSAdapter) PublishFileEvent(ctx context.Context, eventType, bucketID,
 		},
 	}
 
-	topic := fmt.Sprintf("s3.files.%s", eventType)
+	topic := n.BuildSubject("v1", "files", eventType)
 	return n.Publish(ctx, topic, event)
 }
 
@@ -190,7 +196,7 @@ func (n *NATSAdapter) PublishBucketEvent(ctx context.Context, eventType, bucketI
 		},
 	}
 
-	topic := fmt.Sprintf("s3.buckets.%s", eventType)
+	topic := n.BuildSubject("v1", "buckets", eventType)
 	return n.Publish(ctx, topic, event)
 }
 
@@ -198,7 +204,7 @@ func (n *NATSAdapter) PublishBucketEvent(ctx context.Context, eventType, bucketI
 func (n *NATSAdapter) Subscribe(topic string, handler func([]byte) error) (*nats.Subscription, error) {
 	return n.conn.Subscribe(topic, func(msg *nats.Msg) {
 		if err := handler(msg.Data); err != nil {
-			log.Printf("Error handling message: %v", err)
+			slog.Error("Error handling message", slog.String("topic", topic), slog.Any("error", err))
 		}
 	})
 }
@@ -207,7 +213,7 @@ func (n *NATSAdapter) Subscribe(topic string, handler func([]byte) error) (*nats
 func (n *NATSAdapter) QueueSubscribe(topic, queue string, handler func([]byte) error) (*nats.Subscription, error) {
 	return n.conn.QueueSubscribe(topic, queue, func(msg *nats.Msg) {
 		if err := handler(msg.Data); err != nil {
-			log.Printf("Error handling message: %v", err)
+			slog.Error("Error handling message", slog.String("topic", topic), slog.String("queue", queue), slog.Any("error", err))
 		}
 	})
 }
@@ -261,7 +267,7 @@ type instanceTokenResponse struct {
 // RequestInstanceToken asks the IAM service for a scoped JWT token for the metrics agent.
 func (n *NATSAdapter) RequestInstanceToken(ctx context.Context, userID, instanceID string) (string, error) {
 	correlationID := uuid.New().String()
-	subject := "dev.iam.v1.token.generate"
+	subject := fmt.Sprintf("%s.iam.v1.token.generate", n.profile)
 
 	req := instanceTokenRequest{
 		InstanceID: instanceID,
@@ -273,13 +279,18 @@ func (n *NATSAdapter) RequestInstanceToken(ctx context.Context, userID, instance
 		return "", fmt.Errorf("failed to marshal instance token request: %w", err)
 	}
 
-	log.Printf("[S3-NATS] [REQUEST] subject=%s correlation_id=%s user_id=%s instance_id=%s status=%s",
-		subject, correlationID, userID, instanceID, n.conn.Status())
+	slog.Info("[S3-NATS] [REQUEST]", 
+		slog.String("subject", subject), 
+		slog.String("correlation_id", correlationID), 
+		slog.String("user_id", userID), 
+		slog.String("instance_id", instanceID))
 
 	msg, err := n.conn.RequestWithContext(ctx, subject, data)
 	if err != nil {
-		log.Printf("[S3-NATS] [ERROR] RequestInstanceToken failed: correlation_id=%s error=%v last_err=%v status=%s",
-			correlationID, err, n.conn.LastError(), n.conn.Status())
+		slog.Error("[S3-NATS] [ERROR] RequestInstanceToken failed", 
+			slog.String("correlation_id", correlationID), 
+			slog.Any("error", err), 
+			slog.String("status", n.conn.Status().String()))
 		return "", fmt.Errorf("NATS request failed: %w", err)
 	}
 
@@ -289,16 +300,16 @@ func (n *NATSAdapter) RequestInstanceToken(ctx context.Context, userID, instance
 	}
 
 	if resp.Error != "" {
-		log.Printf("[S3-NATS] [FAILURE] RequestInstanceToken: correlation_id=%s error=%s", correlationID, resp.Error)
+		slog.Error("[S3-NATS] [FAILURE] RequestInstanceToken", slog.String("correlation_id", correlationID), slog.String("error", resp.Error))
 		return "", fmt.Errorf("IAM service error: %s", resp.Error)
 	}
 
 	if resp.Token == "" {
-		log.Printf("[S3-NATS] [FAILURE] RequestInstanceToken: correlation_id=%s error=empty_token", correlationID)
+		slog.Error("[S3-NATS] [FAILURE] RequestInstanceToken", slog.String("correlation_id", correlationID), slog.String("error", "empty_token"))
 		return "", fmt.Errorf("IAM service returned an empty token")
 	}
 
-	log.Printf("[S3-NATS] [SUCCESS] Instance token received: correlation_id=%s instance_id=%s", correlationID, instanceID)
+	slog.Info("[S3-NATS] [SUCCESS] Instance token received", slog.String("correlation_id", correlationID), slog.String("instance_id", instanceID))
 	return resp.Token, nil
 }
 
@@ -317,7 +328,7 @@ type listVPCsResponse struct {
 // ListVPCs requests the VPC list from the network service via NATS
 func (n *NATSAdapter) ListVPCs(ctx context.Context, tenantID string) ([]domain.VPC, error) {
 	correlationID := uuid.New().String()
-	subject := "dev.network.v1.vpc.list"
+	subject := fmt.Sprintf("%s.network.v1.vpc.list", n.profile)
 
 	req := listVPCsRequest{
 		CorrelationID: correlationID,
@@ -329,7 +340,7 @@ func (n *NATSAdapter) ListVPCs(ctx context.Context, tenantID string) ([]domain.V
 		return nil, fmt.Errorf("failed to marshal vpc list request: %w", err)
 	}
 
-	log.Printf("[S3-NATS] [REQUEST] subject=%s correlation_id=%s tenant_id=%s", subject, correlationID, tenantID)
+	slog.Info("[S3-NATS] [REQUEST]", slog.String("subject", subject), slog.String("correlation_id", correlationID), slog.String("tenant_id", tenantID))
 
 	msg, err := n.conn.RequestWithContext(ctx, subject, data)
 	if err != nil {
