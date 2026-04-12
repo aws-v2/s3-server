@@ -54,6 +54,8 @@ jobs:
               -e APP_PROFILE=staging \
               -e SERVER_PORT=8099 \
               -e POSTGRES_HOST=postgres-staging \
+              -e EUREKA_HOSTNAME=s3-server-staging\
+              -e EUREKA_IP_ADDR=8761 \
               -e POSTGRES_PORT=5432 \
               -e POSTGRES_USER=root \
               -e POSTGRES_PASSWORD=root \
