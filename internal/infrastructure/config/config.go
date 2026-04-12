@@ -45,6 +45,8 @@ type NATSConfig struct {
 	URL      string
 	User     string
 	Password string
+	Host     string
+	Port     int
 }
 
 type S3Config struct {
@@ -52,6 +54,8 @@ type S3Config struct {
 	AccessKey string
 	SecretKey string
 	UseSSL    bool
+	Host      string
+	Port      int
 }
 
 func Load() (*Config, error) {
@@ -92,12 +96,16 @@ func Load() (*Config, error) {
 			URL:      utilsCfg.NATS.URL,
 			User:     utilsCfg.NATS.User,
 			Password: utilsCfg.NATS.Password,
+			Host:     utilsCfg.NATS.Host,
+			Port:     utilsCfg.NATS.Port,
 		},
 		S3: S3Config{
 			Endpoint:  utilsCfg.S3.Endpoint,
 			AccessKey: utilsCfg.S3.AccessKey,
 			SecretKey: utilsCfg.S3.SecretKey,
 			UseSSL:    utilsCfg.S3.UseSSL,
+			Host:      utilsCfg.S3.Host,
+			Port:      utilsCfg.S3.Port,
 		},
 	}, nil
 }

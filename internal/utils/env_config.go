@@ -41,6 +41,8 @@ type S3Config struct {
 	AccessKey string
 	SecretKey string
 	UseSSL    bool
+	Host      string
+	Port      int
 }
 
 type ServerConfig struct {
@@ -51,6 +53,8 @@ type NATSConfig struct {
 	URL      string
 	User     string
 	Password string
+	Host     string
+	Port     int
 }
 
 func Load() (*Config, error) {
@@ -75,6 +79,8 @@ func Load() (*Config, error) {
 			AccessKey: getEnv("MINIO_ACCESS_KEY", "minioadmin"),
 			SecretKey: getEnv("MINIO_SECRET_KEY", "minioadmin123"),
 			UseSSL:    getEnvBool("MINIO_USE_SSL", false),
+			Host:      getEnv("MINIO_HOST", "localhost"),
+			Port:      getEnvInt("MINIO_PORT", 9000),
 		},
 		Server: ServerConfig{
 			Port: getEnv("SERVER_PORT", "8083"),
@@ -83,6 +89,8 @@ func Load() (*Config, error) {
 			URL:      getEnv("NATS_URL", "nats://localhost:4222"),
 			User:     getEnv("NATS_USER", "auth-server"),
 			Password: getEnv("NATS_PASSWORD", "auth-secret"),
+			Host:     getEnv("NATS_HOST", "localhost"),
+			Port:     getEnvInt("NATS_PORT", 4222),
 		},
 	}
 

@@ -166,13 +166,18 @@ func main() {
 	// Pre-requisite reachability checks
 	slog.Info("Performing reachability checks...")
 	
-	if err := network.CheckReachability("localhost", 4222, 5, 2*time.Second); err != nil {
-		slog.Error("FATAL: NATS unreachable", slog.Any("error", err))
+	if err := network.CheckReachability(cfg.NATS.Host, cfg.NATS.Port, 5, 2*time.Second); err != nil {
+		slog.Error("FATAL: NATS unreachable", slog.Any("error", err), slog.String("host", cfg.NATS.Host), slog.Int("port", cfg.NATS.Port))
 		os.Exit(1)
 	}
 
 	if err := network.CheckReachability(cfg.Database.Host, cfg.Database.Port, 5, 2*time.Second); err != nil {
-		slog.Error("FATAL: Database unreachable", slog.Any("error", err))
+		slog.Error("FATAL: Database unreachable", slog.Any("error", err), slog.String("host", cfg.Database.Host), slog.Int("port", cfg.Database.Port))
+		os.Exit(1)
+	}
+
+	if err := network.CheckReachability(cfg.S3.Host, cfg.S3.Port, 5, 2*time.Second); err != nil {
+		slog.Error("FATAL: MinIO unreachable", slog.Any("error", err), slog.String("host", cfg.S3.Host), slog.Int("port", cfg.S3.Port))
 		os.Exit(1)
 	}
 
