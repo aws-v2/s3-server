@@ -71,7 +71,7 @@ func Load() (*Config, error) {
 		APP_PROFILE: appProfile,
 		ServerPort:  serverPort,
 		Eureka: EurekaConfig{
-			ServerURL:         getEnv("EUREKA_SERVER_URL", ""),
+			ServerURL:         getEnv("EUREKA_SERVER_URL", "http://localhost:8761/eureka"),
 			AppName:           getEnv("EUREKA_APP_NAME", "S3-SERVICE"),
 			HostName:          getEnv("EUREKA_HOSTNAME", "localhost"),
 			IPAddr:            getEnv("EUREKA_IP_ADDR", "127.0.0.1"),
