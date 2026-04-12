@@ -2,6 +2,8 @@ package utils
 
 import (
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"strconv"
 	"time"
@@ -61,6 +63,12 @@ func Load() (*Config, error) {
 	// Load .env file
 	_ = godotenv.Load()
 
+	natsURL := getEnv("NATS_URL", "nats://localhost:4222")
+	natsHost, natsPort := parseAddr(natsURL, "localhost", 4222)
+
+	minioEndpoint := getEnv("MINIO_ENDPOINT", "localhost:9000")
+	minioHost, minioPort := parseAddr(minioEndpoint, "localhost", 9000)
+
 	cfg := &Config{
 		DB: DBConfig{
 			Host:            getEnv("POSTGRES_HOST", "localhost"),
@@ -75,22 +83,22 @@ func Load() (*Config, error) {
 			ConnMaxIdleTime: getEnvDuration("DB_CONN_MAX_IDLE_TIME", 10*time.Minute),
 		},
 		S3: S3Config{
-			Endpoint:  getEnv("MINIO_ENDPOINT", "localhost:9000"),
+			Endpoint:  minioEndpoint,
 			AccessKey: getEnv("MINIO_ACCESS_KEY", "minioadmin"),
 			SecretKey: getEnv("MINIO_SECRET_KEY", "minioadmin123"),
 			UseSSL:    getEnvBool("MINIO_USE_SSL", false),
-			Host:      getEnv("MINIO_HOST", "localhost"),
-			Port:      getEnvInt("MINIO_PORT", 9000),
+			Host:      getEnv("MINIO_HOST", minioHost),
+			Port:      getEnvInt("MINIO_PORT", minioPort),
 		},
 		Server: ServerConfig{
 			Port: getEnv("SERVER_PORT", "8083"),
 		},
 		NATS: NATSConfig{
-			URL:      getEnv("NATS_URL", "nats://localhost:4222"),
+			URL:      natsURL,
 			User:     getEnv("NATS_USER", "auth-server"),
 			Password: getEnv("NATS_PASSWORD", "auth-secret"),
-			Host:     getEnv("NATS_HOST", "localhost"),
-			Port:     getEnvInt("NATS_PORT", 4222),
+			Host:     getEnv("NATS_HOST", natsHost),
+			Port:     getEnvInt("NATS_PORT", natsPort),
 		},
 	}
 
@@ -99,6 +107,32 @@ func Load() (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func parseAddr(addr string, defaultHost string, defaultPort int) (string, int) {
+	if addr == "" {
+		return defaultHost, defaultPort
+	}
+
+	// Try parsing as URL first (for nats://...)
+	u, err := url.Parse(addr)
+	if err == nil && u.Host != "" {
+		if host, portStr, err := net.SplitHostPort(u.Host); err == nil {
+			port, _ := strconv.Atoi(portStr)
+			return host, port
+		}
+		// If SplitHostPort fails, u.Host might just be the hostname
+		return u.Host, defaultPort
+	}
+
+	// Try parsing as host:port (for MINIO_ENDPOINT)
+	if host, portStr, err := net.SplitHostPort(addr); err == nil {
+		port, _ := strconv.Atoi(portStr)
+		return host, port
+	}
+
+	// If all fails, return addr as host and default port
+	return addr, defaultPort
 }
 
 func getEnv(key, defaultValue string) string {
