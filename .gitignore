@@ -1,11 +1,6 @@
-./docs/*
-docs/*
-docs
-docs/
-
 # Secrets
 .env
 
 # Binaries
 *.exe
-s3
+s3

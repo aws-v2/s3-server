@@ -1,0 +1,1 @@
+ALTER TABLE buckets DROP CONSTRAINT fk_buckets_owner;

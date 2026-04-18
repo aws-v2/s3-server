@@ -23,6 +23,7 @@ type Handlers struct {
 	Security     *SecurityHandler
 	Validator    middleware.APIKeyValidator
 	JWTValidator domain.JWTValidator
+	Docs *DocsHandler
 }
 
 // RegisterRoutes registers all application routes
@@ -36,7 +37,7 @@ func RegisterRoutes(router *gin.Engine, handlers *Handlers) {
 	// v1.Use(middleware.BearerAuthMiddleware(handlers.JWTValidator))------------>>IAM
 
 	// Track all V1 requests
-	v1.Use(handlers.Analytics.TrackRequestMiddleware())
+	v1.Use(handlers.Analytics.TrackRequestMiddleware())	
 
 	// Register domain-specific routes
 	registerObjectRoutes(v1, handlers.File, handlers.Validator)
@@ -51,6 +52,9 @@ func RegisterRoutes(router *gin.Engine, handlers *Handlers) {
 	registerPrefixRoutes(v1, handlers.Prefix)
 	registerSecurityRoutes(v1, handlers.Security)
 
+
+	registerDocsRoutes(v1, handlers)
+
 }
 
 // registerHealthRoutes registers all health check routes
@@ -63,7 +67,27 @@ func registerHealthRoutes(v1 *gin.RouterGroup, handler *HandlerForHealth) {
 		health.GET("/metrics", handler.GetMetrics)
 	}
 }
+func registerDocsRoutes(v1 *gin.RouterGroup, handlers *Handlers) {
+	docs := v1.Group("/docs")
+	// {
+	// 	docs.GET("", handlers.Docs.GetPublicManifest)
+	// 	docs.GET("/:slug", handlers.Docs.GetPublicDoc)
+	// }
+		{
+		docs.GET("", handlers.Docs.GetInternalManifest)
+		docs.GET("/:slug", handlers.Docs.GetInternalDoc)
+	}
 
+	internal := v1.Group("/internal/docs")
+
+	// 🔐 protect internal docs
+	internal.Use(middleware.BearerAuthMiddleware(handlers.JWTValidator))
+
+	{
+		internal.GET("", handlers.Docs.GetInternalManifest)
+		internal.GET("/:slug", handlers.Docs.GetInternalDoc)
+	}
+}
 // registerFileRoutes registers all file-related routes
 func registerObjectRoutes(v1 *gin.RouterGroup, handler *HandlerForFiles, validator middleware.APIKeyValidator) {
 	object := v1.Group("/files")

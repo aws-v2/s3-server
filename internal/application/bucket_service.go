@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"s3/internal/domain"
 	"s3/internal/infrastructure/dto"
@@ -85,6 +86,9 @@ func (s *BucketService) CreateBucket(ctx context.Context, input dto.CreateBucket
 		})
 	}
 
+log.Printf("DEBUG: OwnerId=%q, BucketName=%q", input.OwnerId, input.Name)
+
+
 	arn := fmt.Sprintf("arn:serw:s3:%s:%s:bucket/%s", input.Region, input.OwnerId, input.Name)
 
 	bucket := &domain.Bucket{
@@ -112,7 +116,6 @@ func (s *BucketService) CreateBucket(ctx context.Context, input dto.CreateBucket
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
 	}
-
 	// Save metadata in repository
 	bucketObject, err := s.bucketRepo.SaveBucket(ctx, bucket)
 	if err != nil {

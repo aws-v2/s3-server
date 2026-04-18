@@ -273,6 +273,7 @@ func main() {
 	multipartService := application.NewMultipartService(postgresRepo, postgresRepo, postgresRepo, minioAdapter, metricsClient)
 	accessPointService := application.NewAccessPointService(postgresRepo, postgresRepo, natsAdapter)
 	securityService := application.NewSecurityService(postgresRepo)
+	docsService := application.NewDocsService("./docs")
 
 	// 3. Initialize Transport Layer (HTTP)
 	slog.Info("Initializing HTTP handlers...")
@@ -290,7 +291,8 @@ func main() {
 		AccessPoint: http.NewAccessPointHandler(accessPointService),
 		Security:    http.NewSecurityHandler(securityService),
 		Validator:    iamValidator, 
-		JWTValidator: nil,          
+		JWTValidator: nil,        
+		Docs:        http.NewDocsHandler(docsService),  
 	}
 	
 	// Initialize and start NATS controllers

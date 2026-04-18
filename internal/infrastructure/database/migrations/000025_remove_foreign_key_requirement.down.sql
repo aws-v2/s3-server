@@ -1,0 +1,1 @@
+ALTER TABLE buckets ADD CONSTRAINT fk_buckets_owner FOREIGN KEY (owner_id) REFERENCES users(id);

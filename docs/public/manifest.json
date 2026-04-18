@@ -1,0 +1,20 @@
+{
+  "service": "S3",
+  "version": "V1",
+  "categories": [
+    {
+      "title": "Getting Started",
+      "items": [
+        { "title": "S3 Overview", "slug": "s3-overview" },
+        { "title": "Quickstart", "slug": "s3-quickstart" }
+      ]
+    },
+    {
+      "title": "Core Concepts",
+      "items": [
+        { "title": "Buckets", "slug": "s3-buckets" },
+        { "title": "Objects", "slug": "s3-objects" }
+      ]
+    }
+  ]
+}
