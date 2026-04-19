@@ -69,15 +69,10 @@ func registerHealthRoutes(v1 *gin.RouterGroup, handler *HandlerForHealth) {
 }
 func registerDocsRoutes(v1 *gin.RouterGroup, handlers *Handlers) {
 	docs := v1.Group("/docs")
-	// {
-	// 	docs.GET("", handlers.Docs.GetPublicManifest)
-	// 	docs.GET("/:slug", handlers.Docs.GetPublicDoc)
-	// }
-		{
-		docs.GET("", handlers.Docs.GetInternalManifest)
-		docs.GET("/:slug", handlers.Docs.GetInternalDoc)
+	{
+		docs.GET("", handlers.Docs.GetPublicManifest)
+		docs.GET("/:slug", handlers.Docs.GetPublicDoc)
 	}
-
 	internal := v1.Group("/internal/docs")
 
 	// 🔐 protect internal docs
