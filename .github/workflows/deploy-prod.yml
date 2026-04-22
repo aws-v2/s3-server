@@ -1,4 +1,4 @@
-name: Prod deployment.
+name: Prod Deployment
 
 on:
   push:
@@ -20,45 +20,57 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
+
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
-          tags: qarani/s3-server:latest
+          tags: qarani/s3-server:prod
 
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-
       - name: Deploy to EC2 via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USERNAME }}
-          key: ${{ secrets.EC2_SSH_KEY }}
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_USERNAME }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          passphrase: ${{ secrets.PROD_SSH_PASSPHRASE }}
           script: |
-            docker pull qarani/s3-server:latest
-            docker stop s3-server || true
-            docker rm s3-server || true
-            docker network create mini-aws-network || true
-            docker run -d --name s3-server \
-              --network mini-aws-network \
+            docker network create aws-prod-network || true
+            docker pull qarani/s3-server:prod
+            docker stop s3-server-prod || true
+            docker rm s3-server-prod || true
+            docker run -d \
+              --name s3-server-prod \
+              --network aws-prod-network \
               -p 8082:8099 \
               -e APP_PROFILE=prod \
               -e SERVER_PORT=8099 \
               -e POSTGRES_HOST=postgres-prod \
               -e POSTGRES_PORT=5432 \
-              -e POSTGRES_USER=root \
-              -e POSTGRES_PASSWORD=${{ secrets.PROD_DB_PASSWORD }} \
-              -e POSTGRES_DB=s3 \
+              -e POSTGRES_USER=postgres-prod-user \
+              -e POSTGRES_PASSWORD=postgres-prod-password \
+              -e POSTGRES_DB=s3_db \
+              -e POSTGRES_SSL_MODE=disable \
+              -e EUREKA_HOSTNAME=s3-server-prod \
+              -e EUREKA_IP_ADDR=127.0.0.1 \
+              -e EUREKA_SERVER_URL=http://discovery-server-prod:8761/eureka \
+              -e EUREKA_APP_NAME=S3-SERVICE \
+              -e EUREKA_VIP_ADDRESS=s3-service \
+              -e EUREKA_INSTANCE_ID=s3-service-prod:8099 \
               -e NATS_URL=nats://nats-prod:4222 \
-              -e NATS_USER=auth-server \
-              -e NATS_PASSWORD=${{ secrets.PROD_NATS_PASSWORD }} \
+              -e NATS_USER=nats-prod-user \
+              -e NATS_PASSWORD=nats-prod-password \
               -e MINIO_ENDPOINT=minio-prod:9000 \
-              -e MINIO_ACCESS_KEY=${{ secrets.PROD_MINIO_ACCESS_KEY }} \
-              -e MINIO_SECRET_KEY=${{ secrets.PROD_MINIO_SECRET_KEY }} \
-              qarani/s3-server:latest
+              -e MINIO_ACCESS_KEY=minio-prod-user \
+              -e MINIO_SECRET_KEY=minio-prod-password \
+              -e MINIO_USE_SSL=false \
+              qarani/s3-server:prod
+
+
+
+
