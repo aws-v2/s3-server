@@ -47,6 +47,8 @@ type NATSConfig struct {
 	Password string
 	Host     string
 	Port     int
+	NatsPrefix  string
+
 }
 
 type S3Config struct {
@@ -98,6 +100,8 @@ func Load() (*Config, error) {
 			Password: utilsCfg.NATS.Password,
 			Host:     utilsCfg.NATS.Host,
 			Port:     utilsCfg.NATS.Port,
+			NatsPrefix: getEnv("NATS_PREFIX", "dev.v1"),
+
 		},
 		S3: S3Config{
 			Endpoint:  utilsCfg.S3.Endpoint,

@@ -267,7 +267,7 @@ type instanceTokenResponse struct {
 // RequestInstanceToken asks the IAM service for a scoped JWT token for the metrics agent.
 func (n *NATSAdapter) RequestInstanceToken(ctx context.Context, userID, instanceID string) (string, error) {
 	correlationID := uuid.New().String()
-	subject := fmt.Sprintf("%s.iam.v1.token.generate", n.profile)
+	subject := fmt.Sprintf("%s.iam.token.generate", n.profile)
 
 	req := instanceTokenRequest{
 		InstanceID: instanceID,

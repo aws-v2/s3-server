@@ -195,7 +195,7 @@ func main() {
 
 	// Initialize NATS connection FIRST for IAM integration
 	slog.Info("Connecting to NATS...", slog.String("url", cfg.NATS.URL))
-	natsAdapter, err := event.NewNATSAdapter(cfg.NATS.URL, cfg.NATS.User, cfg.NATS.Password, cfg.APP_PROFILE)
+	natsAdapter, err := event.NewNATSAdapter(cfg.NATS.URL, cfg.NATS.User, cfg.NATS.Password, cfg.NATS.NatsPrefix)
 	if err != nil {
 		slog.Error("Failed to connect to NATS", slog.Any("error", err))
 		os.Exit(1)

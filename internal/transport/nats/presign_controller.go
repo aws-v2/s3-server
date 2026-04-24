@@ -58,13 +58,13 @@ func NewPresignController(
 }
 
 func (c *PresignController) Start() error {
-	subject := "dev.api.v1.s3.create_presigned_url"
+	subject := "dev.v1.s3.create_presigned_url"
 	_, err := c.conn.Subscribe(subject, c.handleCreatePresignedURL)
 	if err != nil {
 		return fmt.Errorf("failed to subscribe to %s: %w", subject, err)
 	}
 
-	downloadSubj := "dev.api.v1.s3.get_download_url"
+	downloadSubj := "dev.v1.s3.get_download_url"
 	_, err = c.conn.Subscribe(downloadSubj, c.handleGetDownloadURL)
 	if err != nil {
 		return fmt.Errorf("failed to subscribe to %s: %w", downloadSubj, err)
@@ -106,8 +106,19 @@ func (c *PresignController) handleCreatePresignedURL(msg *nats.Msg) {
 	if err != nil {
 		log.Printf("[S3] Bucket %s not found, creating it...", bucketName)
 		createInput := dto.CreateBucketInput{
-			Name:    bucketName,
-			OwnerId: req.UserID,
+			Name:       bucketName,
+			OwnerId:    req.UserID,
+			Region:     "us-east-1",
+			BucketType: "private",
+			ObjectOwnership: "BucketOwnerEnforced",
+			BlockPublicAccess: dto.BlockPublicAccess{
+				BlockPublicAcls:       true,
+				IgnorePublicAcls:      true,
+				BlockPublicPolicy:     true,
+				RestrictPublicBuckets: true,
+			},
+			Versioning:        true,
+			Encryption:        dto.BucketEncryption{Type: "AES256"},
 		}
 		newBucket, err := c.bucketService.CreateBucket(ctx, createInput)
 		if err != nil {
@@ -171,7 +182,7 @@ func (c *PresignController) handleGetDownloadURL(msg *nats.Msg) {
 	// since we want an internal download link for the backend.
 	bucketName := "gamelift_games"
 	expiresAt := time.Now().Add(15 * time.Minute)
-	
+
 	// We use the internal generateSignedURL directly
 	url := c.presignService.GenerateInternalURL(bucketName, req.Key, "GET", expiresAt)
 
