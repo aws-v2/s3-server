@@ -297,7 +297,7 @@ func main() {
 	
 	// Initialize and start NATS controllers
 	slog.Info("Initializing NATS controllers...")
-	presignController := nats.NewPresignController(natsAdapter.GetConnection(), presignedService, bucketService, postgresRepo)
+	presignController := nats.NewPresignController(natsAdapter.GetConnection(), presignedService, bucketService, postgresRepo, cfg.NATS.NatsPrefix)
 	if err := presignController.Start(); err != nil {
 		slog.Warn("Failed to start NATS presign controller", slog.Any("error", err))
 	}
