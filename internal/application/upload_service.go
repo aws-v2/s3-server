@@ -112,7 +112,7 @@ func (s *UploadService) UploadObjectReader(ctx context.Context, bucketID, key st
 					"download_url": downloadURL,
 					"status":       "success",
 				}
-				subj := "dev.s3.v1.game.stored"
+				subj := "dev.v1.s3.game.stored"
 				log.Printf("[S3] Publishing completion event for Game %d to %s with internal link", gameID, subj)
 				if err := s.events.PublishRaw(ctx, subj, event); err != nil {
 					log.Printf("[S3] ERROR: Failed to publish NATS event: %v", err)
