@@ -63,7 +63,7 @@ jobs:
               -e POSTGRES_SSL_MODE=disable \
               -e NATS_URL=nats://nats-staging:4222 \
               -e NATS_USER=nats-staging-user \
-              -e NATS_PASSWORD=nats-staging-user \
+              -e NATS_PASSWORD=nats-staging-password \
               -e MINIO_ENDPOINT=minio-staging:9000 \
               -e MINIO_ACCESS_KEY=minio-staging-user \
               -e MINIO_SECRET_KEY=postgres-staging-password \
