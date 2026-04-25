@@ -73,6 +73,7 @@ jobs:
               -e EUREKA_HOSTNAME=s3-server-staging \
               -e EUREKA_IP_ADDR=127.0.0.1 \
               -e EUREKA_VIP_ADDRESS=s3-service \
+              -e NATS_PREFIX=staging.v1 \
               -e EUREKA_INSTANCE_ID=s3-service-staging:8099 \
               qarani/s3-server:staging
 
