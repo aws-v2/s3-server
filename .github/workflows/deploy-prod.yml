@@ -78,7 +78,6 @@ jobs:
             docker network create --driver overlay --attachable aws-prod-network  || true
 
             docker pull qarani/s3-server:prod
-            echo "removingold service"
             docker service rm s3-server-prod || true
 
             docker service create \
