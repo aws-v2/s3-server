@@ -75,37 +75,37 @@ jobs:
           key: ${{ secrets.PROD_SSH_KEY }}
           script: |
           
-            docker network create aws-prod-network || true
+            docker network create --driver overlay --attachable aws-prod-network  || true
+
             docker pull qarani/s3-server:prod
-            docker stop s3-server-prod || true
-            docker rm s3-server-prod || true
-            docker run -d \
+            docker service rm s3-server-prod || true
+
+            docker service create \
               --name s3-server-prod \
               --network aws-prod-network \
-              -p 8082:8099 \
-              -e APP_PROFILE=prod \
-              -e SERVER_PORT=8099 \
-              -e POSTGRES_HOST=postgres-prod \
-              -e POSTGRES_PORT=5432 \
-              -e POSTGRES_USER=postgres-prod-user \
-              -e POSTGRES_PASSWORD=postgres-prod-password \
-              -e POSTGRES_DB=s3_db \
-              -e POSTGRES_SSL_MODE=disable \
-              -e EUREKA_HOSTNAME=s3-server-prod \
-              -e EUREKA_IP_ADDR=127.0.0.1 \
-              -e EUREKA_SERVER_URL=http://discovery-server-prod:8761/eureka \
-              -e EUREKA_APP_NAME=S3-SERVICE \
-              -e EUREKA_VIP_ADDRESS=s3-service \
-              -e EUREKA_INSTANCE_ID=s3-service-prod:8099 \
-              -e NATS_URL=nats://nats-prod:4222 \
-              -e NATS_USER=nats-prod-user \
-              -e NATS_PASSWORD=nats-prod-password \
-              -e MINIO_ENDPOINT=minio-prod:9000 \
-              -e MINIO_ACCESS_KEY=minio-prod-user \
-              -e MINIO_SECRET_KEY=minio-prod-password \
-              -e MINIO_USE_SSL=false \
+              --publish published=8082,target=8099 \
+              --env APP_PROFILE=prod \
+              --env SERVER_PORT=8099 \
+              --env POSTGRES_HOST=postgres-prod \
+              --env POSTGRES_PORT=5432 \
+              --env POSTGRES_USER=postgres-prod-user \
+              --env POSTGRES_PASSWORD=postgres-prod-password \
+              --env POSTGRES_DB=s3_db \
+              --env POSTGRES_SSL_MODE=disable \
+              --env EUREKA_HOSTNAME=s3-server-prod \
+              --env EUREKA_IP_ADDR=127.0.0.1 \
+              --env EUREKA_SERVER_URL=http://discovery-server-prod:8761/eureka \
+              --env EUREKA_APP_NAME=S3-SERVICE \
+              --env EUREKA_VIP_ADDRESS=s3-service \
+              --env EUREKA_INSTANCE_ID=s3-service-prod:8099 \
+              --env NATS_URL=nats://nats-prod:4222 \
+              --env NATS_USER=nats-prod-user \
+              --env NATS_PASSWORD=nats-prod-password \
+              --env MINIO_ENDPOINT=minio-prod:9000 \
+              --env MINIO_ACCESS_KEY=minio-prod-user \
+              --env MINIO_SECRET_KEY=minio-prod-password \
+              --env MINIO_USE_SSL=false \
               qarani/s3-server:prod
-
 
 
 
