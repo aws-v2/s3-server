@@ -12,6 +12,8 @@ func CheckReachability(host string, port int, attempts int, delay time.Duration)
 	address := net.JoinHostPort(host, fmt.Sprintf("%d", port))
 	var err error
 
+
+
 	for i := 1; i <= attempts; i++ {
 		slog.Info("Checking reachability", 
 			slog.String("address", address), 

@@ -170,6 +170,9 @@ func main() {
 		slog.Error("FATAL: NATS unreachable", slog.Any("error", err), slog.String("host", cfg.NATS.Host), slog.Int("port", cfg.NATS.Port))
 		os.Exit(1)
 	}
+		slog.Info("Checking reachability---->", 
+		slog.String("address", cfg.Database.Host), 
+)
 
 	if err := network.CheckReachability(cfg.Database.Host, cfg.Database.Port, 5, 2*time.Second); err != nil {
 		slog.Error("FATAL: Database unreachable", slog.Any("error", err), slog.String("host", cfg.Database.Host), slog.Int("port", cfg.Database.Port))
