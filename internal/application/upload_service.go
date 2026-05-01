@@ -253,6 +253,25 @@ func (s *UploadService) UploadFile(ctx context.Context, input UploadFileInput) (
 		BytesUploaded: totalBytes,
 	})
 
+ 
+requestMetricsPayload :=dto.S3RequestMetricDTO{
+	MetricType: "api_request",
+	Timestamp: time.Now(),
+	Operation: "put",
+	RequestTier: "standard",
+	TenantID: bucket.OwnerID,
+}
+bandwidthMetricsPayload :=dto.S3BandwidthMetricDTO{
+	MetricType: "bandwidth",
+	Timestamp: time.Now(),
+	BytesOut: totalBytes,
+	Region: bucket.Region,
+	TenantID: bucket.OwnerID,
+}
+	go s.events.Publish(ctx, "dev.v1.billing.metric.s3",requestMetricsPayload)
+	go s.events.Publish(ctx, "dev.v1.billing.metric.s3",bandwidthMetricsPayload)
+	 
+
 	return &UploadFileOutput{
 		FileIDs:   fileIDs,
 		Result:    fmt.Sprintf("Successfully processed %d files", len(input.Files)),
@@ -271,6 +290,15 @@ func (s *UploadService) emitMetrics(ctx context.Context, bucketID, ownerID, regi
 
 	_ = s.metrics.SendS3Metrics(ctx, partial)
 }
+type MetricType string
+
+const (
+	BillingTypeAPIRequest          MetricType = "api_request"
+	BillingTypeStorageUtilization  MetricType = "storage_utilization"
+	BillingTypeDataTransferOut     MetricType = "data_transfer_out"
+	BillingTypeDataTransferIn      MetricType = "data_transfer_in"
+)
+ 
 
 func (s *UploadService) CreateFolder(ctx context.Context, bucketID, folderName string) error {
 	actor, _ := ctx.Value("actor").(domain.Actor)
