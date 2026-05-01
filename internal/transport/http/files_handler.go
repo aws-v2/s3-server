@@ -32,14 +32,17 @@ func NewFileHandler(
 func (h *HandlerForFiles) UploadFile(c *gin.Context) {
 	bucketID := c.Param("bucketId")
 
-	// Parse Multipart Form
-	form, err := c.MultipartForm()
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to parse multipart form: " + err.Error()})
-		return
-	}
+	const maxUploadSize = 1 << 30 // 1GB
 
-	// 1. Process Files
+c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxUploadSize)
+
+if err := c.Request.ParseMultipartForm(32 << 20); err != nil {
+    c.JSON(http.StatusBadRequest, gin.H{"error": "failed to parse multipart form: " + err.Error()})
+    return
+}
+
+// Access the parsed form via c.Request.MultipartForm
+form := c.Request.MultipartForm
 	files := form.File["files"]
 	var fileContents []application.FileContent
 	for _, fileHeader := range files {
@@ -62,7 +65,6 @@ func (h *HandlerForFiles) UploadFile(c *gin.Context) {
 		})
 	}
 
-	// 2. Parse JSON fields from form
 	var destSettings application.DestinationSettings
 	if ds := c.PostForm("destinationSettings"); ds != "" {
 		json.Unmarshal([]byte(ds), &destSettings)
@@ -103,7 +105,6 @@ func (h *HandlerForFiles) UploadFile(c *gin.Context) {
 
 	c.JSON(http.StatusCreated, output)
 }
-
 // CreateFolder handles explicit folder creation (0-byte object)
 // POST /buckets/:bucketId/folders
 func (h *HandlerForFiles) CreateFolder(c *gin.Context) {
