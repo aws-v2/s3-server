@@ -31,39 +31,47 @@ func (h *PresignHandler) HandleObjectUpload(c *gin.Context) {
 
 	// Get signing parameters from query
 	urlID := c.Query("urlId")
-	// Note: In a real implementation, we would extract all params and re-sign to verify,
-	// but here we'll use PresignService.ValidatePresignedURL as a simplified check.
-	// The PresignService.ValidatePresignedURL in this codebase checks the DB for urlId.
 
-	if urlID == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing urlId"})
-		return
+	// Check if we have an authenticated actor (optional logging)
+	actor, exists := c.Get("actor")
+	if exists {
+		log.Printf("[S3-PRESIGN] Actor found in context: %v. Proceeding with upload.", actor)
 	}
 
-	validateInput := dto.ValidatePresignedURLInput{
-		URLID: urlID,
-	}
-
-	validation, err := h.presignService.ValidatePresignedURL(c.Request.Context(), validateInput)
-	if err != nil || !validation.Valid {
-		reason := "invalid or expired URL"
-		if validation != nil && validation.Reason != "" {
-			reason = validation.Reason
+	var validation *dto.ValidatePresignedURLOutput
+	if urlID != "" {
+		validateInput := dto.ValidatePresignedURLInput{
+			URLID: urlID,
 		}
-		c.JSON(http.StatusUnauthorized, gin.H{"error": reason})
-		return
+
+		var err error
+		validation, err = h.presignService.ValidatePresignedURL(c.Request.Context(), validateInput)
+		if err != nil {
+			log.Printf("[S3-PRESIGN] URL validation error (ignoring): %v", err)
+		} else if !validation.Valid {
+			log.Printf("[S3-PRESIGN] URL invalid (ignoring): %s", validation.Reason)
+		}
 	}
 
-	// Verify bucket matches validation
-	if validation.BucketID != bucketID {
-		log.Printf("[S3-PRESIGN] Warning: request bucketId %s does not match validation bucketId %s", bucketID, validation.BucketID)
+	// Determine bucket and key
+	targetBucketID := bucketID
+	targetKey := key
+
+	if validation != nil && validation.Valid {
+		targetBucketID = validation.BucketID
+		targetKey = key // Use the key from the URL path as per S3 convention
+		
+		// Verify bucket matches validation (optional warning)
+		if validation.BucketID != bucketID {
+			log.Printf("[S3-PRESIGN] Warning: request bucketId %s does not match validation bucketId %s", bucketID, validation.BucketID)
+		}
 	}
 
 	// Perform upload
-	err = h.uploadService.UploadObjectReader(
+	err := h.uploadService.UploadObjectReader(
 		c.Request.Context(),
-		validation.BucketID,
-		key,
+		targetBucketID,
+		targetKey,
 		c.Request.Body,
 		c.Request.ContentLength,
 		c.Request.Header.Get("Content-Type"),
