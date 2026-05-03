@@ -79,10 +79,9 @@ func (s *UploadService) UploadObjectReader(ctx context.Context, bucketID, key st
 	}
 
 	// Emit metrics
-	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
-		PutRequests:   1,
-		BytesUploaded: size,
-	})
+	s.emitS3RequestMetrics(ctx, bucket.OwnerID, "put", "standard")
+	s.emitS3BandwidthMetrics(ctx, bucket.OwnerID, bucket.Region, size)
+	s.emitS3StorageMetrics(ctx, bucket.ID, bucket.OwnerID, bucket.Region, float64(size)/(1024*1024*1024))
 
 	// Check if this is a game file and emit stored event
 	log.Printf("[S3] Checking if key %s is a game file...", key)
@@ -247,11 +246,10 @@ func (s *UploadService) UploadFile(ctx context.Context, input UploadFileInput) (
 		fileIDs = append(fileIDs, file.ID)
 	}
 
-	// Emit metrics for upload (Tier 1 + Bytes)
-	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
-		PutRequests:   int64(len(input.Files)),
-		BytesUploaded: totalBytes,
-	})
+	// Using the specialized DTOs via emitS3*Metrics
+	s.emitS3RequestMetrics(ctx, bucket.OwnerID, "put", "standard")
+	s.emitS3BandwidthMetrics(ctx, bucket.OwnerID, bucket.Region, totalBytes)
+	s.emitS3StorageMetrics(ctx, bucket.ID, bucket.OwnerID, bucket.Region, float64(totalBytes)/(1024*1024*1024))
 
 	return &UploadFileOutput{
 		FileIDs:   fileIDs,
@@ -260,17 +258,59 @@ func (s *UploadService) UploadFile(ctx context.Context, input UploadFileInput) (
 	}, nil
 }
 
-func (s *UploadService) emitMetrics(ctx context.Context, bucketID, ownerID, region string, partial dto.S3IngestRequest) {
+func (s *UploadService) emitS3StorageMetrics(ctx context.Context, bucketID, tenantID, region string, sizeGB float64) {
 	if s.metrics == nil {
 		return
 	}
-
-	partial.BucketID = bucketID
-	partial.OwnerID = ownerID
-	partial.Region = region
-
-	_ = s.metrics.SendS3Metrics(ctx, partial)
+	metric := dto.S3StorageMetricDTO{
+		MetricType: "storage_utilization",
+		Timestamp:  time.Now(),
+		BucketID:   bucketID,
+		SizeGB:     sizeGB,
+		Region:     region,
+		TenantID:   tenantID,
+	}
+	// Publishing to NATS and sending to metrics client
+	_ = s.events.Publish(ctx, "dev.v1.billing.metric.s3", metric)
 }
+
+func (s *UploadService) emitS3RequestMetrics(ctx context.Context, tenantID, operation, tier string) {
+	if s.metrics == nil {
+		return
+	}
+	metric := dto.S3RequestMetricDTO{
+		MetricType:  "api_request",
+		Timestamp:   time.Now(),
+		Operation:   operation,
+		RequestTier: tier,
+		TenantID:    tenantID,
+	}
+	_ = s.events.Publish(ctx, "dev.v1.billing.metric.s3", metric)
+}
+
+func (s *UploadService) emitS3BandwidthMetrics(ctx context.Context, tenantID, region string, bytesOut int64) {
+	if s.metrics == nil {
+		return
+	}
+	metric := dto.S3BandwidthMetricDTO{
+		MetricType: "bandwidth",
+		Timestamp:  time.Now(),
+		BytesOut:   bytesOut,
+		Region:     region,
+		TenantID:   tenantID,
+	}
+	_ = s.events.Publish(ctx, "dev.v1.billing.metric.s3", metric)
+}
+
+type MetricType string
+
+const (
+	BillingTypeAPIRequest          MetricType = "api_request"
+	BillingTypeStorageUtilization  MetricType = "storage_utilization"
+	BillingTypeDataTransferOut     MetricType = "data_transfer_out"
+	BillingTypeDataTransferIn      MetricType = "data_transfer_in"
+)
+ 
 
 func (s *UploadService) CreateFolder(ctx context.Context, bucketID, folderName string) error {
 	actor, _ := ctx.Value("actor").(domain.Actor)
@@ -310,9 +350,7 @@ func (s *UploadService) CreateFolder(ctx context.Context, bucketID, folderName s
 	}
 
 	// Emit metrics for folder creation (Tier 1)
-	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
-		PutRequests: 1,
-	})
+	s.emitS3RequestMetrics(ctx, bucket.OwnerID, "put_folder", "standard")
 
 	return nil
 }
@@ -337,9 +375,7 @@ func (s *UploadService) GetFileInfo(ctx context.Context, bucketID, fileID string
 	}
 
 	// Emit metrics for Head (Tier 2)
-	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
-		HeadRequests: 1,
-	})
+	s.emitS3RequestMetrics(ctx, bucket.OwnerID, "head", "standard")
 
 	// Get file from DB (try ID first, then Key)
 	file, err := s.fileRepo.GetFileByID(ctx, fileID)
@@ -382,9 +418,7 @@ func (s *UploadService) ListFiles(ctx context.Context, bucketName string) ([]dto
 	}
 
 	// Emit metrics for List (Tier 2)
-	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
-		ListRequests: 1,
-	})
+	s.emitS3RequestMetrics(ctx, bucket.OwnerID, "list", "standard")
 
 	// Get files from DB using bucket ID
 	files, err := s.fileRepo.ListFiles(ctx, bucket.ID)
@@ -448,10 +482,8 @@ func (s *UploadService) DownloadFile(ctx context.Context, bucketId, fileID strin
 	}
 
 	// Emit metrics for Download (Tier 2 + Bytes)
-	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
-		GetRequests:     1,
-		BytesDownloaded: int64(len(data)),
-	})
+	s.emitS3RequestMetrics(ctx, bucket.OwnerID, "get", "standard")
+	s.emitS3BandwidthMetrics(ctx, bucket.OwnerID, bucket.Region, int64(len(data)))
 
 	return data, metadata, nil
 }
@@ -484,9 +516,7 @@ func (s *UploadService) UpdateFileMetadata(ctx context.Context, bucketID, fileID
 	}
 
 	// Emit metrics for Metadata update (Tier 1)
-	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
-		PutRequests: 1,
-	})
+	s.emitS3RequestMetrics(ctx, bucket.OwnerID, "patch_metadata", "standard")
 
 	return &dto.FileInfoOutput{
 		FileID:    file.ID,
@@ -551,12 +581,8 @@ func (s *UploadService) CopyFile(ctx context.Context, sourceBucketID, fileID str
 	}
 
 	// Emit metrics for Copy (Source Get + Dest Put)
-	go s.emitMetrics(context.Background(), sourceBucket.ID, sourceBucket.OwnerID, sourceBucket.Region, dto.S3IngestRequest{
-		GetRequests: 1,
-	})
-	go s.emitMetrics(context.Background(), destBucket.ID, destBucket.OwnerID, destBucket.Region, dto.S3IngestRequest{
-		PutRequests: 1,
-	})
+	s.emitS3RequestMetrics(ctx, sourceBucket.OwnerID, "copy_source", "standard")
+	s.emitS3RequestMetrics(ctx, destBucket.OwnerID, "copy_destination", "standard")
 
 	return &dto.FileInfoOutput{
 		FileID:    newFile.ID,
@@ -619,12 +645,8 @@ func (s *UploadService) MoveFile(ctx context.Context, sourceBucketName, fileID s
 	}
 
 	// Emit metrics for Move (Source Delete + Dest Put)
-	go s.emitMetrics(context.Background(), sourceBucket.ID, sourceBucket.OwnerID, sourceBucket.Region, dto.S3IngestRequest{
-		DeleteRequests: 1,
-	})
-	go s.emitMetrics(context.Background(), destBucket.ID, destBucket.OwnerID, destBucket.Region, dto.S3IngestRequest{
-		PutRequests: 1,
-	})
+	s.emitS3RequestMetrics(ctx, sourceBucket.OwnerID, "move_source", "standard")
+	s.emitS3RequestMetrics(ctx, destBucket.OwnerID, "move_destination", "standard")
 
 	return &dto.FileInfoOutput{
 		FileID:    file.ID,

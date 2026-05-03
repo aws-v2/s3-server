@@ -1,7 +1,6 @@
 package http
 
 import (
-	"s3/internal/domain"
 	"s3/internal/middleware"
 
 	"github.com/gin-gonic/gin"
@@ -22,8 +21,7 @@ type Handlers struct {
 	AccessPoint  *AccessPointHandler
 	Security     *SecurityHandler
 	Validator    middleware.APIKeyValidator
-	JWTValidator domain.JWTValidator
-	Docs *DocsHandler
+	Docs         *DocsHandler
 }
 
 // RegisterRoutes registers all application routes
@@ -34,10 +32,9 @@ func RegisterRoutes(router *gin.Engine, handlers *Handlers) {
 
 	// Chain authentication middlewares: try API key first, then JWT
 	// v1.Use(middleware.APIKeyAuthMiddleware(handlers.Validator))------------>>IAM
-	// v1.Use(middleware.BearerAuthMiddleware(handlers.JWTValidator))------------>>IAM
 
 	// Track all V1 requests
-	v1.Use(handlers.Analytics.TrackRequestMiddleware())	
+	v1.Use(handlers.Analytics.TrackRequestMiddleware())
 
 	// Register domain-specific routes
 	registerObjectRoutes(v1, handlers.File, handlers.Validator)
@@ -51,7 +48,6 @@ func RegisterRoutes(router *gin.Engine, handlers *Handlers) {
 	registerSearchRoutes(v1, handlers.Search)
 	registerPrefixRoutes(v1, handlers.Prefix)
 	registerSecurityRoutes(v1, handlers.Security)
-
 
 	registerDocsRoutes(v1, handlers)
 
@@ -75,14 +71,13 @@ func registerDocsRoutes(v1 *gin.RouterGroup, handlers *Handlers) {
 	}
 	internal := v1.Group("/internal/docs")
 
-	// 🔐 protect internal docs
-	internal.Use(middleware.BearerAuthMiddleware(handlers.JWTValidator))
-
+	// 🔐 protect internal docs (Disabled: Auth handled upstream)
 	{
 		internal.GET("", handlers.Docs.GetInternalManifest)
 		internal.GET("/:slug", handlers.Docs.GetInternalDoc)
 	}
 }
+
 // registerFileRoutes registers all file-related routes
 func registerObjectRoutes(v1 *gin.RouterGroup, handler *HandlerForFiles, validator middleware.APIKeyValidator) {
 	object := v1.Group("/files")

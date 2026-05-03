@@ -294,7 +294,6 @@ func main() {
 		AccessPoint: http.NewAccessPointHandler(accessPointService),
 		Security:    http.NewSecurityHandler(securityService),
 		Validator:    iamValidator, 
-		JWTValidator: nil,        
 		Docs:        http.NewDocsHandler(docsService),  
 	}
 	
