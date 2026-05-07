@@ -152,7 +152,7 @@ log.Printf("[S3] Presigned URL generated for Gppame %s", output.URL)
 		log.Printf("[S3] Failed to respond to NATS message: %v", err)
 	}
 
-	log.Printf("[S3] Presigned URL generated for Game %d", req.GameID)
+	log.Printf("[S3] Presigned URL generated for Game %s", req.GameID)
 }
 
 func (c *PresignController) handleGetDownloadURL(msg *nats.Msg) {
