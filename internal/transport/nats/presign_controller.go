@@ -84,7 +84,7 @@ func (c *PresignController) handleCreatePresignedURL(msg *nats.Msg) {
 log.Printf("[S3] Presigned URL requested for Game %s, User %s, ARN %s", req.GameID, req.UserID, req.ARN)
 	bucketName := "default_bucket" // Fallback
 	if strings.Contains(req.ARN, "game") {
-		bucketName = "gamelift_games"
+		bucketName = "gameliftgames-default"
 	}
 
 	ctx := context.Background()
@@ -173,7 +173,7 @@ func (c *PresignController) handleGetDownloadURL(msg *nats.Msg) {
 
 	// For simplicity, we skip FileID lookup and use the direct storage port signed URL
 	// since we want an internal download link for the backend.
-	bucketName := "gamelift_games"
+	bucketName := "gameliftgames-default"
 	expiresAt := time.Now().Add(15 * time.Minute)
 	
 	// We use the internal generateSignedURL directly
