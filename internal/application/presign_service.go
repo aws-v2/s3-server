@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+ 
 	"s3/internal/domain"
 	"s3/internal/infrastructure/dto"
 	"s3/internal/infrastructure/metrics"
@@ -95,9 +96,8 @@ func (s *PresignService) GenerateUploadURL(ctx context.Context, input dto.Genera
 	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
 		HeadRequests: 1,
 	})
-
 	return &dto.GenerateUploadURLOutput{
-		URL:       url,
+		URL:       fmt.Sprintf("%s", url),
 		URLID:     urlID,
 		ExpiresAt: expiresAt,
 		Fields: map[string]string{

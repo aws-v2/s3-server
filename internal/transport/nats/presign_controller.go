@@ -16,7 +16,7 @@ import (
 )
 
 type createPresignedURLRequest struct {
-	GameID    int    `json:"game_id"`
+	GameID    string    `json:"game_id"`
 	UserID    string `json:"user_id"`
 	ARN       string `json:"arn"`
 	Extension string `json:"extension"`
@@ -58,13 +58,13 @@ func NewPresignController(
 }
 
 func (c *PresignController) Start() error {
-	subject := "dev.api.v1.s3.create_presigned_url"
+	subject := "dev.v1.s3.task.create_presigned_url"
 	_, err := c.conn.Subscribe(subject, c.handleCreatePresignedURL)
 	if err != nil {
 		return fmt.Errorf("failed to subscribe to %s: %w", subject, err)
 	}
 
-	downloadSubj := "dev.api.v1.s3.get_download_url"
+	downloadSubj := "dev.v1.s3.task.get_download_url"
 	_, err = c.conn.Subscribe(downloadSubj, c.handleGetDownloadURL)
 	if err != nil {
 		return fmt.Errorf("failed to subscribe to %s: %w", downloadSubj, err)
@@ -81,8 +81,7 @@ func (c *PresignController) handleCreatePresignedURL(msg *nats.Msg) {
 		return
 	}
 
-	log.Printf("[S3] Presigned URL requested for Game %d, User %s, ARN %s", req.GameID, req.UserID, req.ARN)
-
+log.Printf("[S3] Presigned URL requested for Game %s, User %s, ARN %s", req.GameID, req.UserID, req.ARN)
 	bucketName := "default_bucket" // Fallback
 	if strings.Contains(req.ARN, "game") {
 		bucketName = "gamelift_games"
@@ -126,7 +125,7 @@ func (c *PresignController) handleCreatePresignedURL(msg *nats.Msg) {
 	if ext == "" {
 		ext = ".zip"
 	}
-	key := fmt.Sprintf("uploads/games/%d/game%s", req.GameID, ext)
+	key := fmt.Sprintf("uploads/games/%s/game%s", req.GameID, ext)
 	presignInput := dto.GenerateUploadURLInput{
 		BucketID:  bucketID,
 		Key:       key,
@@ -134,6 +133,8 @@ func (c *PresignController) handleCreatePresignedURL(msg *nats.Msg) {
 	}
 
 	output, err := c.presignService.GenerateUploadURL(ctx, presignInput)
+log.Printf("[S3] Presigned URL generated for Gppame %s", output.URL)
+
 	if err != nil {
 		log.Printf("[S3] Failed to generate presigned URL: %v", err)
 		return
