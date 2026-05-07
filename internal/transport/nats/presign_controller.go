@@ -135,6 +135,9 @@ log.Printf("[S3] Presigned URL requested for Game %s, User %s, ARN %s", req.Game
 	output, err := c.presignService.GenerateUploadURL(ctx, presignInput)
 log.Printf("[S3] Presigned URL generated for Gppame %s", output.URL)
 
+
+
+
 	if err != nil {
 		log.Printf("[S3] Failed to generate presigned URL: %v", err)
 		return
