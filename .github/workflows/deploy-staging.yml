@@ -68,7 +68,7 @@ jobs:
               -e NATS_PASSWORD=nats-staging-password \
               -e MINIO_ENDPOINT=minio-staging:9000 \
               -e MINIO_ACCESS_KEY=minio-staging-user \
-              -e MINIO_SECRET_KEY=postgres-staging-password \
+              -e MINIO_SECRET_KEY=minio-staging-password \
               -e MINIO_USE_SSL=false \
               -e EUREKA_SERVER_URL=http://discovery-server-staging:8761/eureka \
               -e EUREKA_APP_NAME=S3-SERVICE \
