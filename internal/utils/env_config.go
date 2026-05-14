@@ -57,6 +57,7 @@ type NATSConfig struct {
 	Password string
 	Host     string
 	Port     int
+	NatsPrefix string
 }
 
 func Load() (*Config, error) {
@@ -99,6 +100,7 @@ func Load() (*Config, error) {
 			Password: getEnv("NATS_PASSWORD", "auth-secret"),
 			Host:     getEnv("NATS_HOST", natsHost),
 			Port:     getEnvInt("NATS_PORT", natsPort),
+			NatsPrefix: getEnv("NATS_PREFIX", "dev.v1"),
 		},
 	}
 
