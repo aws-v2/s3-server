@@ -24,7 +24,9 @@ jobs:
       with:
         context: .
         push: true
-        tags: qarani/s3-server:staging
+        tags: |
+          qarani/s3-server:staging-${{github.sha}}
+          qarani/s3-server:staging
 
   deploy:
     needs: build-and-push
@@ -45,7 +47,7 @@ jobs:
           key: ${{ secrets.STAGING_SSH_KEY }}
           script: |
             docker network create aws-staging-network || true
-            docker pull qarani/s3-server:staging
+            docker pull qarani/s3-server:staging-${{github.sha}}
             docker stop s3-server-staging || true
             docker rm s3-server-staging || true
             docker run -d --name s3-server-staging \
@@ -74,7 +76,7 @@ jobs:
               -e EUREKA_IP_ADDR=127.0.0.1 \
               -e EUREKA_VIP_ADDRESS=s3-service \
               -e EUREKA_INSTANCE_ID=s3-service-staging:8099 \
-              qarani/s3-server:staging
+              qarani/s3-server:staging-${{github.sha}}
 
 
   open-pr-to-main:
