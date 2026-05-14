@@ -41,6 +41,7 @@ type PresignController struct {
 	presignService *application.PresignService
 	bucketService  *application.BucketService
 	userRepo       domain.UserRepository
+	natsPrefix string
 }
 
 func NewPresignController(
@@ -48,29 +49,34 @@ func NewPresignController(
 	presignService *application.PresignService,
 	bucketService *application.BucketService,
 	userRepo domain.UserRepository,
+	natsPrefix string,
 ) *PresignController {
 	return &PresignController{
 		conn:           conn,
 		presignService: presignService,
 		bucketService:  bucketService,
 		userRepo:       userRepo,
+		natsPrefix:natsPrefix,
+
 	}
 }
-
 func (c *PresignController) Start() error {
-	subject := "dev.v1.s3.task.create_presigned_url"
+	subject := fmt.Sprintf("%s.s3.task.create_presigned_url", c.natsPrefix)
+
 	_, err := c.conn.Subscribe(subject, c.handleCreatePresignedURL)
 	if err != nil {
 		return fmt.Errorf("failed to subscribe to %s: %w", subject, err)
 	}
 
-	downloadSubj := "dev.v1.s3.task.get_download_url"
+	downloadSubj := fmt.Sprintf("%s.s3.task.get_download_url", c.natsPrefix)
+
 	_, err = c.conn.Subscribe(downloadSubj, c.handleGetDownloadURL)
 	if err != nil {
 		return fmt.Errorf("failed to subscribe to %s: %w", downloadSubj, err)
 	}
 
 	log.Printf("[S3] NATS Listener started for subjects: %s, %s", subject, downloadSubj)
+
 	return nil
 }
 
