@@ -26,7 +26,9 @@ jobs:
         with:
           context: .
           push: true
-          tags: qarani/s3-server:prod
+          tags: |
+            qarani/s3-server:prod-${{github.sha}}
+            qarani/s3-server:prod
 
   deploy:
     needs: build-and-push
@@ -41,7 +43,7 @@ jobs:
           passphrase: ${{ secrets.PROD_SSH_PASSPHRASE }}
           script: |
             docker network create aws-prod-network || true
-            docker pull qarani/s3-server:prod
+            docker pull qarani/s3-server:prod-${{github.sha}}
             docker stop s3-server-prod || true
             docker rm s3-server-prod || true
             docker run -d \
@@ -69,7 +71,7 @@ jobs:
               -e MINIO_ACCESS_KEY=minio-prod-user \
               -e MINIO_SECRET_KEY=minio-prod-password \
               -e MINIO_USE_SSL=false \
-              qarani/s3-server:prod
+              qarani/s3-server:prod-${{github.sha}}
 
 
 
