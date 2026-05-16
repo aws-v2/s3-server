@@ -87,6 +87,11 @@ func registerDocsRoutes(v1 *gin.RouterGroup, handlers *Handlers) {
 // registerFileRoutes registers all file-related routes
 func registerObjectRoutes(v1 *gin.RouterGroup, handler *HandlerForFiles) {
 	object := v1.Group("/files")
+const (
+    KB = 1 << 10
+    MB = 1 << 20
+    GB = 1 << 30
+)
 
 	// object.Use(middleware.APIKeyAuthMiddleware(validator))------------>>IAM
 
@@ -94,7 +99,9 @@ func registerObjectRoutes(v1 *gin.RouterGroup, handler *HandlerForFiles) {
 		// Upload file to bucket
 		object.POST("/upload/:bucketId",
 			middleware.AllowedFileTypesMiddleware(),
-			middleware.MaxFileSizeMiddleware(10<<20),
+			// middleware.MaxFileSizeMiddleware(10<<20),
+middleware.MaxFileSizeMiddleware(1 * GB),
+
 			handler.UploadFile)
 
 		// Create direct folder
