@@ -71,6 +71,7 @@ jobs:
               -e MINIO_SECRET_KEY=minio-staging-password \
               -e MINIO_USE_SSL=false \
               -e EUREKA_SERVER_URL=http://discovery-server-staging:8761/eureka \
+              -e S3_DEFAULT_BUCKETS="libvirt-templates-system,agent-binary-system,system-bucket-1,system-bucket-2,system-bucket-3,system-bucket-4,system-bucket-5" \
               -e EUREKA_APP_NAME=S3-SERVICE \
               -e EUREKA_HOSTNAME=s3-server-staging \
               -e EUREKA_IP_ADDR=127.0.0.1 \

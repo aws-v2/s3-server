@@ -21,7 +21,6 @@ type Handlers struct {
 	Analytics    *AnalyticsHandler
 	AccessPoint  *AccessPointHandler
 	Security     *SecurityHandler
-	Validator    middleware.APIKeyValidator
 	JWTValidator domain.JWTValidator
 	Docs *DocsHandler
 }
@@ -32,6 +31,8 @@ func RegisterRoutes(router *gin.Engine, handlers *Handlers) {
 	// router.Use(middleware.CORSMiddleware()) // Disabled: CORS handled by API Gateway
 	v1 := router.Group("/api/v1/s3")
 
+	v1.Use(middleware.AuthContextMiddleware())
+
 	// Chain authentication middlewares: try API key first, then JWT
 	// v1.Use(middleware.APIKeyAuthMiddleware(handlers.Validator))------------>>IAM
 	// v1.Use(middleware.BearerAuthMiddleware(handlers.JWTValidator))------------>>IAM
@@ -40,8 +41,8 @@ func RegisterRoutes(router *gin.Engine, handlers *Handlers) {
 	v1.Use(handlers.Analytics.TrackRequestMiddleware())	
 
 	// Register domain-specific routes
-	registerObjectRoutes(v1, handlers.File, handlers.Validator)
-	registerBucketRoutes(v1, handlers, handlers.Validator)
+	registerObjectRoutes(v1, handlers.File)
+	registerBucketRoutes(v1, handlers,)
 	registerHealthRoutes(v1, handlers.Health)
 	registerWebhookRoutes(v1, handlers.Webhook)
 	registerMultipartRoutes(v1, handlers.Multipart)
@@ -76,7 +77,7 @@ func registerDocsRoutes(v1 *gin.RouterGroup, handlers *Handlers) {
 	internal := v1.Group("/internal/docs")
 
 	// 🔐 protect internal docs
-	internal.Use(middleware.BearerAuthMiddleware(handlers.JWTValidator))
+	// internal.Use(middleware.BearerAuthMiddleware(handlers.JWTValidator))
 
 	{
 		internal.GET("", handlers.Docs.GetInternalManifest)
@@ -84,7 +85,7 @@ func registerDocsRoutes(v1 *gin.RouterGroup, handlers *Handlers) {
 	}
 }
 // registerFileRoutes registers all file-related routes
-func registerObjectRoutes(v1 *gin.RouterGroup, handler *HandlerForFiles, validator middleware.APIKeyValidator) {
+func registerObjectRoutes(v1 *gin.RouterGroup, handler *HandlerForFiles) {
 	object := v1.Group("/files")
 
 	// object.Use(middleware.APIKeyAuthMiddleware(validator))------------>>IAM
@@ -123,13 +124,10 @@ func registerObjectRoutes(v1 *gin.RouterGroup, handler *HandlerForFiles, validat
 }
 
 // registerBucketRoutes registers all bucket management routes
-func registerBucketRoutes(v1 *gin.RouterGroup, handlers *Handlers, validator middleware.APIKeyValidator) {
+func registerBucketRoutes(v1 *gin.RouterGroup, handlers *Handlers) {
 	buckets := v1.Group("/buckets")
 	handler := handlers.Bucket
-	buckets.Use(middleware.LocalBypassMiddleware())
-	buckets.Use(middleware.ExtractUserIDMiddleware())
 
-	// buckets.Use(middleware.APIKeyAuthMiddleware(validator))------------>>IAM
 	{
 		// Create new bucket
 		buckets.POST("/create-bucket", handler.CreateBucket)
@@ -192,8 +190,6 @@ func registerBucketRoutes(v1 *gin.RouterGroup, handlers *Handlers, validator mid
 
 func registerSecurityRoutes(v1 *gin.RouterGroup, handler *SecurityHandler) {
 	security := v1.Group("/security")
-	security.Use(middleware.LocalBypassMiddleware())
-	security.Use(middleware.ExtractUserIDMiddleware())
 	{
 		security.GET("/summary", handler.GetSecuritySummary)
 	}
@@ -325,8 +321,6 @@ func registerSearchRoutes(v1 *gin.RouterGroup, handler *SearchHandler) {
 
 func registerAnalyticsRoutes(v1 *gin.RouterGroup, handler *AnalyticsHandler) {
 	analytics := v1.Group("/analytics")
-	analytics.Use(middleware.LocalBypassMiddleware())
-	analytics.Use(middleware.ExtractUserIDMiddleware())
 	{
 		// Get storage usage statistics
 		analytics.GET("/storage/usage", handler.GetStorageUsage)

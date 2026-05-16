@@ -5,6 +5,7 @@ import (
 	"os"
 	"s3/internal/utils"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -15,6 +16,7 @@ type Config struct {
 	Database    DatabaseConfig
 	NATS        NATSConfig
 	S3          S3Config
+	
 }
 
 type EurekaConfig struct {
@@ -57,6 +59,7 @@ type S3Config struct {
 	UseSSL    bool
 	Host      string
 	Port      int
+	DefaultBuckets []string
 }
 
 func Load() (*Config, error) {
@@ -108,10 +111,24 @@ func Load() (*Config, error) {
 			UseSSL:    utilsCfg.S3.UseSSL,
 			Host:      utilsCfg.S3.Host,
 			Port:      utilsCfg.S3.Port,
+			DefaultBuckets: parseStringSlice(getEnv("S3_DEFAULT_BUCKETS", "libvirt-templates-system,agent-binary-system,system-bucket-1,system-bucket-2,system-bucket-3,system-bucket-4,system-bucket-5")),
 		},
 	}, nil
 }
 
+func parseStringSlice(raw string) []string {
+    if raw == "" {
+        return []string{}
+    }
+    parts := strings.Split(raw, ",")
+    result := make([]string, 0, len(parts))
+    for _, p := range parts {
+        if trimmed := strings.TrimSpace(p); trimmed != "" {
+            result = append(result, trimmed)
+        }
+    }
+    return result
+}
 func getEnv(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {
 		return value

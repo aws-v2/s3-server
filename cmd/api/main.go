@@ -16,7 +16,6 @@ import (
 	"s3/internal/infrastructure/repository"
 	"s3/internal/infrastructure/storage"
 	"s3/internal/infrastructure/system"
-	"s3/internal/middleware"
 	"s3/internal/transport/http"
 	"s3/internal/transport/nats"
 	"time"
@@ -226,7 +225,6 @@ func main() {
 	postgresRepo := repository.NewPostgresRepository(db)
 
 	// Create IAM validator
-	iamValidator := middleware.NewIAMValidator(natsAdapter.GetConnection())
 
 	// Run migrations
 	slog.Info("Running database migrations...")
@@ -290,14 +288,13 @@ func main() {
 		Multipart:   http.NewMultipartHandler(multipartService), 
 		AccessPoint: http.NewAccessPointHandler(accessPointService),
 		Security:    http.NewSecurityHandler(securityService),
-		Validator:    iamValidator, 
 		JWTValidator: nil,        
 		Docs:        http.NewDocsHandler(docsService),  
 	}
 	
 	// Initialize and start NATS controllers
 	slog.Info("Initializing NATS controllers...")
-	presignController := nats.NewPresignController(natsAdapter.GetConnection(), presignedService, bucketService, postgresRepo, cfg.NATS.NatsPrefix)
+	presignController := nats.NewPresignController(natsAdapter.GetConnection(), presignedService, bucketService, postgresRepo, cfg.NATS.NatsPrefix, cfg.S3.DefaultBuckets)
 	if err := presignController.Start(); err != nil {
 		slog.Warn("Failed to start NATS presign controller", slog.Any("error", err))
 	}

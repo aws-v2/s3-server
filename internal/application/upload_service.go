@@ -186,9 +186,11 @@ func (s *UploadService) resolveBucket(ctx context.Context, idOrName string, filt
 }
 
 func (s *UploadService) UploadFile(ctx context.Context, input UploadFileInput) (*UploadFileOutput, error) {
-	actor, _ := ctx.Value("actor").(domain.Actor)
-	filterID := actor.ID
-	if IsAdmin(actor.ID) {
+	userID, _ := ctx.Value("userId").(string)
+	filterID := userID
+	role, _ := ctx.Value("role").(string)
+
+	if role == "admin" {
 		filterID = ""
 	}
 
