@@ -436,8 +436,7 @@ func IsAdmin(role string) bool {
 // }
 
 
-func (s *UploadService) DownloadFile(ctx context.Context, bucketId, fileID string) ([]byte, *dto.FileInfoOutput, error) {
-	userID, _ := ctx.Value("userId").(string)
+func (s *UploadService) DownloadFile(ctx context.Context, bucketId, fileID string, userID string) ([]byte, *dto.FileInfoOutput, error) {
 	role, _   := ctx.Value("role").(string)
 
 	// Build actor from the context values

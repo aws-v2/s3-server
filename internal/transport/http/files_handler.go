@@ -218,6 +218,7 @@ func (h *HandlerForFiles) ValidateSignature(key, method, signature string, expir
 func (h *HandlerForFiles) DownloadFile(c *gin.Context) {
 	bucketID := c.Param("bucketId")
 	fileID := c.Param("fileId")
+	userID :=c.GetString("userId")
 
 	log.Printf("[HANDLER] DownloadFile: bucketID=%s fileID=%s", bucketID, fileID)
 
@@ -245,7 +246,7 @@ func (h *HandlerForFiles) DownloadFile(c *gin.Context) {
 
 	log.Printf("[HANDLER] DownloadFile: signature valid, delegating to service — bucketID=%s fileID=%s", bucketID, fileID)
 
-	fileData, metadata, err := h.uploadService.DownloadFile(c.Request.Context(), bucketID, fileID)
+	fileData, metadata, err := h.uploadService.DownloadFile(c.Request.Context(), bucketID, fileID, userID)
 	if err != nil {
 		log.Printf("[HANDLER] DownloadFile: service error bucketID=%s fileID=%s err=%v", bucketID, fileID, err)
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
