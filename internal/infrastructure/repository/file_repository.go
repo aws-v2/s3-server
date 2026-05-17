@@ -99,7 +99,7 @@ func (r *PostgresRepository) GetFileByIDOrKey(ctx context.Context, idOrKey strin
 		keyQuery := `
 			SELECT id, bucket_id, key, size, mime_type, metadata, created_at 
 			FROM files 
-			WHERE key = $1 AND owner_id = '00000000-0000-0000-0000-000000000000' 
+			WHERE key = $1 AND bucket_id = $2
 			ORDER BY created_at DESC
 			LIMIT 1
 		`
