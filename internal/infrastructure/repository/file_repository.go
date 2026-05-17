@@ -52,6 +52,88 @@ func (r *PostgresRepository) GetFileByKey(ctx context.Context, bucketID string, 
 	return &file, nil
 }
 
+
+// The safetty of this function is predicate on that its never used
+// anywhere else, because when selecting by key since the agent keys willalways be unique
+// given itjust one system user has accestothat bucket, 
+// TOFIX:
+// TODO:
+func (r *PostgresRepository) GetFileByIDOrKey(ctx context.Context, idOrKey string, bucketID string) (*domain.File, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	query := `
+		SELECT id, bucket_id, key, size, mime_type, metadata, created_at 
+		FROM files 
+		WHERE id = $1
+	`
+
+	var file domain.File
+	var metadataJSON []byte
+
+	err := r.db.QueryRowContext(ctx, query, idOrKey).Scan(
+		&file.ID,
+		&file.BucketID,
+		&file.Key,
+		&file.Size,
+		&file.MimeType,
+		&metadataJSON,
+		&file.CreatedAt,
+	)
+
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("failed to get file by id: %w", err)
+	}
+
+	// Found by ID — done
+	if err == nil {
+		goto unmarshal
+	}
+
+	// Not found by ID — try by key within the bucket
+	{
+		// it comes a time where a man must do what a man must do, and that time is now, 
+		// and that thing is to query by key and dangerously hardcode the owner_id to system user, 
+		// because only system user has access to that bucket,
+		// i hope the gods forgive me for this sin, but at least its only in one place and its not used anywhere else,
+
+		keyQuery := `
+			SELECT id, bucket_id, key, size, mime_type, metadata, created_at 
+			FROM files 
+			WHERE key = $1 AND owner_id = '00000000-0000-0000-0000-000000000000' 
+			ORDER BY created_at DESC
+			LIMIT 1
+		`
+// here create a comment, 
+// if bucket.name . contains default && bucket.name.contains 'system' only then return the result 
+		err = r.db.QueryRowContext(ctx, keyQuery, idOrKey, bucketID).Scan(
+			&file.ID,
+			&file.BucketID,
+			&file.Key,
+			&file.Size,
+			&file.MimeType,
+			&metadataJSON,
+			&file.CreatedAt,
+		)
+
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil, ErrNotFound
+			}
+			return nil, fmt.Errorf("failed to get file by key: %w", err)
+		}
+	}
+
+unmarshal:
+	if len(metadataJSON) > 0 {
+		if err := json.Unmarshal(metadataJSON, &file.Metadata); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal metadata: %w", err)
+		}
+	}
+
+	return &file, nil
+}
+
 func (r *PostgresRepository) GetFileByID(ctx context.Context, id string) (*domain.File, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()

@@ -1,12 +1,17 @@
 package http
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"s3/internal/application"
 	"s3/internal/infrastructure/dto"
+	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -14,16 +19,20 @@ import (
 type HandlerForFiles struct {
 	uploadService *application.UploadService
 	deleteService *application.DeleteService
+	secretKey     string
 }
 
 // Constructor for all file-related handlers
 func NewFileHandler(
 	uploadService *application.UploadService,
 	deleteService *application.DeleteService,
+	secretKey string,
+
 ) *HandlerForFiles {
 	return &HandlerForFiles{
 		uploadService: uploadService,
 		deleteService: deleteService,
+		secretKey:     secretKey,
 	}
 }
 
@@ -180,11 +189,54 @@ func (h *HandlerForFiles) GetFileInfo(c *gin.Context) {
 	c.JSON(http.StatusOK, output)
 }
 
-// DownloadFile handles file download
-// GET /:bucketId/files/:fileId/download
+func (h *HandlerForFiles) signString(data string) string {
+	mac := hmac.New(sha256.New, []byte(h.secretKey))
+	mac.Write([]byte(data))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+func (h *HandlerForFiles) ValidateSignature(key, method, signature string, expiresAt int64) error {
+	// Check expiry first — cheap check before crypto
+	if time.Now().Unix() > expiresAt {
+		return fmt.Errorf("presigned URL has expired")
+	}
+
+	expected := h.signString(key + method + fmt.Sprintf("%d", expiresAt))
+
+	// Constant-time comparison to prevent timing attacks
+	if !hmac.Equal([]byte(expected), []byte(signature)) {
+		return fmt.Errorf("invalid signature")
+	}
+
+	return nil
+}
+
+// DownloadFile handles file download with presigned URL signature validation.
+// GET /:bucketId/files/:fileId/download?signature=xxx&expires=unix
 func (h *HandlerForFiles) DownloadFile(c *gin.Context) {
 	bucketID := c.Param("bucketId")
 	fileID := c.Param("fileId")
+
+	// Extract presigned URL query params
+	signature := c.Query("signature")
+	expiresStr := c.Query("expires")
+
+	if signature == "" || expiresStr == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing signature or expiry"})
+		return
+	}
+
+	expiresAt, err := strconv.ParseInt(expiresStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid expires parameter"})
+		return
+	}
+
+	// Validate HMAC signature before touching any storage or DB
+	if err := h.ValidateSignature(fileID, http.MethodGet, signature, expiresAt); err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		return
+	}
 
 	fileData, metadata, err := h.uploadService.DownloadFile(c.Request.Context(), bucketID, fileID)
 	if err != nil {

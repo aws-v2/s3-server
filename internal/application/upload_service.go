@@ -410,7 +410,6 @@ func (s *UploadService) ListFiles(ctx context.Context, bucketName string) ([]dto
 
 	return output, nil
 }
-
 func (s *UploadService) DownloadFile(ctx context.Context, bucketId, fileID string) ([]byte, *dto.FileInfoOutput, error) {
 	actor, _ := ctx.Value("actor").(domain.Actor)
 	filterID := actor.ID
@@ -423,17 +422,28 @@ func (s *UploadService) DownloadFile(ctx context.Context, bucketId, fileID strin
 		return nil, nil, err
 	}
 
-	// Get file metadata
-	file, err := s.fileRepo.GetFileByID(ctx, fileID)
+	// Resolve file — system actor uses key-based fallback (GetFileByIDOrKey)
+	// to support internal lookups by object key on system-managed buckets.
+	// Regular actors resolve strictly by ID only.
+	var file *domain.File
+
+	if actor.ID == "00000000-0000-0000-0000-000000000000" {
+		log.Printf("[S3] system actor: resolving file %s in bucket %s by ID or key", fileID, bucket.Name)
+		file, err = s.fileRepo.GetFileByIDOrKey(ctx, fileID, bucket.ID)
+	} else {
+		file, err = s.fileRepo.GetFileByID(ctx, fileID)
+	}
+
 	if err != nil {
 		return nil, nil, fmt.Errorf("file not found: %w", err)
 	}
+
+	log.Printf("[S3] resolved file metadata for %s: %+v", fileID, file)
 
 	if file.BucketID != bucket.ID {
 		return nil, nil, fmt.Errorf("file not in specified bucket")
 	}
 
-	// Get file data from storage
 	data, err := s.storage.GetObject(ctx, bucket.StorageName, file.Key)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to retrieve file: %w", err)
@@ -441,15 +451,14 @@ func (s *UploadService) DownloadFile(ctx context.Context, bucketId, fileID strin
 
 	metadata := &dto.FileInfoOutput{
 		FileID:    file.ID,
-		BucketID:  file.BucketID, // ✅ include this if your File struct has it
+		BucketID:  file.BucketID,
 		Key:       file.Key,
 		Size:      file.Size,
 		MimeType:  file.MimeType,
-		Metadata:  file.Metadata, // ✅ include if available
+		Metadata:  file.Metadata,
 		CreatedAt: file.CreatedAt,
 	}
 
-	// Emit metrics for Download (Tier 2 + Bytes)
 	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
 		GetRequests:     1,
 		BytesDownloaded: int64(len(data)),

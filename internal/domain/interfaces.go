@@ -35,6 +35,7 @@ type StoragePort interface {
 type FileRepository interface {
 	SaveFile(ctx context.Context, file File) error
 	GetFileByID(ctx context.Context, id string) (*File, error)
+	GetFileByIDOrKey(ctx context.Context, id, bucketID string) (*File, error)
 	GetFileByKey(ctx context.Context, bucketID, key string) (*File, error)
 	ListFiles(ctx context.Context, bucketID string) ([]File, error)
 	UpdateFile(ctx context.Context, file *File) error

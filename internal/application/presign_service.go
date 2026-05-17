@@ -7,7 +7,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
- 
+	"log"
+
 	"s3/internal/domain"
 	"s3/internal/infrastructure/dto"
 	"s3/internal/infrastructure/metrics"
@@ -108,28 +109,27 @@ func (s *PresignService) GenerateUploadURL(ctx context.Context, input dto.Genera
 
 func (s *PresignService) GenerateInternalURL(bucket, key, method string, expiresAt time.Time) string {
 	urlID := uuid.New().String()
+
+
+
+	// bucketID := c.Param("bucketId")
+	// fileID := c.Param("fileId")
+
+
+
 	return s.generateSignedURL(urlID, bucket, key, method, expiresAt)
 }
 
 func (s *PresignService) generateSignedURL(urlID, bucket, key, method string, expiresAt time.Time) string {
-	baseURL := fmt.Sprintf("/api/v1/s3/files/%s/files/%s", bucket, key)
-	params := fmt.Sprintf("urlId=%s&expires=%d&method=%s", urlID, expiresAt.Unix(), method)
+	baseURL := fmt.Sprintf("/api/v1/s3/files/%s/files/%s/download", bucket, key)
 
+	exp := expiresAt.Unix()
+	signature := s.signString(key + method + fmt.Sprintf("%d", exp))
 
-
-
-//  file
-// 		object.GET("/:bucketId/files/:fileId/download", handler.DownloadFile)
-// api/v1/s3/files/the bucket/files/fileID
-// 		// Delete file
-
-
-
-
-	signature := s.signString(params)
-
-	return fmt.Sprintf("%s?%s&signature=%s", baseURL, params, signature)
+	return fmt.Sprintf("%s?signature=%s&expires=%d", baseURL, signature, exp)
 }
+
+
 
 func (s *PresignService) signString(data string) string {
 	h := hmac.New(sha256.New, []byte(s.secretKey))
@@ -169,6 +169,12 @@ func (s *PresignService) GenerateDownloadURL(ctx context.Context, input dto.Gene
 	expiresAt := time.Now().Add(time.Duration(expiresIn) * time.Second)
 
 	url := s.generateSignedURL(urlID, bucket.Name, file.Key, "GET", expiresAt)
+
+
+
+
+log.Printf("The presignedUrlgenerated %s",url)
+
 
 	presignedURL := &domain.PresignedURL{
 		ID:        urlID,

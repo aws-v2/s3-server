@@ -276,7 +276,7 @@ func main() {
 	// 3. Initialize Transport Layer (HTTP)
 	slog.Info("Initializing HTTP handlers...")
 	handlers := &http.Handlers{
-		File:        http.NewFileHandler(uploadService, deleteService),
+		File:        http.NewFileHandler(uploadService, deleteService,cfg.S3.SecretKey),
 		Bucket:      http.NewBucketHandler(bucketService),
 		Health:      http.NewHealthHandler(healthService),
 		Presign:     http.NewPresignHandler(presignedService, uploadService),

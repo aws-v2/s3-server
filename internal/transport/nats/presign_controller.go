@@ -353,7 +353,7 @@ func (c *PresignController) handleCreatePresignDownloadURL(msg *nats.Msg) {
 	log.Printf("[S3] presigned download URL generated successfully")
 }
 
-
+// here
 func (c *PresignController) handleGetDownloadURL(msg *nats.Msg) {
 	var req getDownloadURLRequest
 	if err := json.Unmarshal(msg.Data, &req); err != nil {
@@ -367,10 +367,16 @@ func (c *PresignController) handleGetDownloadURL(msg *nats.Msg) {
 
 	bucket, key := c.resolveDownloadTarget(req)
 	if bucket == "" || key == "" {
-		log.Printf("[S3] could not resolve bucket/key for asset_type=%s", req.AssetType)
+		log.Printf("[S3] could not resolve bucket/key for asset_type=%s for this request: %+v", req.AssetType, req)
 		c.respondWithError(msg, "could not resolve bucket and key")
 		return
 	}
+
+
+
+
+	// 	bucketID := c.Param("bucketId")
+	// fileID := c.Param("fileId")
 
 
 	log.Printf("")
@@ -378,7 +384,7 @@ func (c *PresignController) handleGetDownloadURL(msg *nats.Msg) {
 	expiresAt := time.Now().Add(15 * time.Minute)
 	url := c.presignService.GenerateInternalURL(bucket, key, "GET", expiresAt)
 
-	log.Printf("[S3] presigned download url — bucket=%s key=%s asset_type=%s user=%s with this final url=%s",
+	log.Printf("[S3] presigned download url %s — bucket=%s key=%s asset_type=%s user=%s with this final url=%s",url,
 		bucket, key, req.AssetType, req.UserID, req.Key)
 
 	respData, _ := json.Marshal(getDownloadURLResponse{DownloadURL: url})
