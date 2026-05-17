@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"s3/internal/domain"
 	"time"
 )
@@ -62,6 +63,8 @@ func (r *PostgresRepository) GetFileByIDOrKey(ctx context.Context, idOrKey strin
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
+	log.Printf("[REPOSITORY] GetFileByIDOrKey: start idOrKey=%s bucketID=%s", idOrKey, bucketID)
+
 	query := `
 		SELECT id, bucket_id, key, size, mime_type, metadata, created_at 
 		FROM files 
@@ -72,30 +75,26 @@ func (r *PostgresRepository) GetFileByIDOrKey(ctx context.Context, idOrKey strin
 	var metadataJSON []byte
 
 	err := r.db.QueryRowContext(ctx, query, idOrKey).Scan(
-		&file.ID,
-		&file.BucketID,
-		&file.Key,
-		&file.Size,
-		&file.MimeType,
-		&metadataJSON,
-		&file.CreatedAt,
+		&file.ID, &file.BucketID, &file.Key, &file.Size,
+		&file.MimeType, &metadataJSON, &file.CreatedAt,
 	)
 
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		log.Printf("[REPOSITORY] GetFileByIDOrKey: query by ID failed idOrKey=%s err=%v", idOrKey, err)
 		return nil, fmt.Errorf("failed to get file by id: %w", err)
 	}
 
-	// Found by ID — done
 	if err == nil {
+		log.Printf("[REPOSITORY] GetFileByIDOrKey: found by ID fileID=%s", file.ID)
 		goto unmarshal
 	}
 
 	// Not found by ID — try by key within the bucket
+	// NOTE: only queries files owned by the system actor (00000000-...).
+	// This path is only valid for system-managed buckets. Caller must ensure
+	// bucket.Name contains both "default" and "system" before relying on this result.
 	{
-		// it comes a time where a man must do what a man must do, and that time is now, 
-		// and that thing is to query by key and dangerously hardcode the owner_id to system user, 
-		// because only system user has access to that bucket,
-		// i hope the gods forgive me for this sin, but at least its only in one place and its not used anywhere else,
+		log.Printf("[REPOSITORY] GetFileByIDOrKey: not found by ID, falling back to key lookup key=%s", idOrKey)
 
 		keyQuery := `
 			SELECT id, bucket_id, key, size, mime_type, metadata, created_at 
@@ -104,72 +103,33 @@ func (r *PostgresRepository) GetFileByIDOrKey(ctx context.Context, idOrKey strin
 			ORDER BY created_at DESC
 			LIMIT 1
 		`
-// here create a comment, 
-// if bucket.name . contains default && bucket.name.contains 'system' only then return the result 
+
 		err = r.db.QueryRowContext(ctx, keyQuery, idOrKey, bucketID).Scan(
-			&file.ID,
-			&file.BucketID,
-			&file.Key,
-			&file.Size,
-			&file.MimeType,
-			&metadataJSON,
-			&file.CreatedAt,
+			&file.ID, &file.BucketID, &file.Key, &file.Size,
+			&file.MimeType, &metadataJSON, &file.CreatedAt,
 		)
 
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
+				log.Printf("[REPOSITORY] GetFileByIDOrKey: not found by key either key=%s bucketID=%s", idOrKey, bucketID)
 				return nil, ErrNotFound
 			}
+			log.Printf("[REPOSITORY] GetFileByIDOrKey: key query error key=%s err=%v", idOrKey, err)
 			return nil, fmt.Errorf("failed to get file by key: %w", err)
 		}
+
+		log.Printf("[REPOSITORY] GetFileByIDOrKey: found by key fileID=%s key=%s", file.ID, file.Key)
 	}
 
 unmarshal:
 	if len(metadataJSON) > 0 {
 		if err := json.Unmarshal(metadataJSON, &file.Metadata); err != nil {
+			log.Printf("[REPOSITORY] GetFileByIDOrKey: metadata unmarshal failed fileID=%s err=%v", file.ID, err)
 			return nil, fmt.Errorf("failed to unmarshal metadata: %w", err)
 		}
 	}
 
-	return &file, nil
-}
-
-func (r *PostgresRepository) GetFileByID(ctx context.Context, id string) (*domain.File, error) {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
-	query := `
-		SELECT id, bucket_id, key, size, mime_type, metadata, created_at 
-		FROM files 
-		WHERE id = $1
-	`
-
-	var file domain.File
-	var metadataJSON []byte
-
-	err := r.db.QueryRowContext(ctx, query, id).Scan(
-		&file.ID,
-		&file.BucketID,
-		&file.Key,
-		&file.Size,
-		&file.MimeType,
-		&metadataJSON,
-		&file.CreatedAt,
-	)
-
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, ErrNotFound
-		}
-		return nil, fmt.Errorf("failed to get file: %w", err)
-	}
-
-	if len(metadataJSON) > 0 {
-		if err := json.Unmarshal(metadataJSON, &file.Metadata); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal metadata: %w", err)
-		}
-	}
-
+	log.Printf("[REPOSITORY] GetFileByIDOrKey: returning file fileID=%s key=%s bucketID=%s", file.ID, file.Key, file.BucketID)
 	return &file, nil
 }
 

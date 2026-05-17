@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"s3/internal/application"
 	"s3/internal/infrastructure/dto"
@@ -213,43 +214,53 @@ func (h *HandlerForFiles) ValidateSignature(key, method, signature string, expir
 
 // DownloadFile handles file download with presigned URL signature validation.
 // GET /:bucketId/files/:fileId/download?signature=xxx&expires=unix
+
 func (h *HandlerForFiles) DownloadFile(c *gin.Context) {
 	bucketID := c.Param("bucketId")
 	fileID := c.Param("fileId")
 
-	// Extract presigned URL query params
+	log.Printf("[HANDLER] DownloadFile: bucketID=%s fileID=%s", bucketID, fileID)
+
 	signature := c.Query("signature")
 	expiresStr := c.Query("expires")
 
 	if signature == "" || expiresStr == "" {
+		log.Printf("[HANDLER] DownloadFile: missing signature or expiry — bucketID=%s fileID=%s", bucketID, fileID)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing signature or expiry"})
 		return
 	}
 
 	expiresAt, err := strconv.ParseInt(expiresStr, 10, 64)
 	if err != nil {
+		log.Printf("[HANDLER] DownloadFile: invalid expires param=%s err=%v", expiresStr, err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid expires parameter"})
 		return
 	}
 
-	// Validate HMAC signature before touching any storage or DB
 	if err := h.ValidateSignature(fileID, http.MethodGet, signature, expiresAt); err != nil {
+		log.Printf("[HANDLER] DownloadFile: signature validation failed fileID=%s err=%v", fileID, err)
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 		return
 	}
 
+	log.Printf("[HANDLER] DownloadFile: signature valid, delegating to service — bucketID=%s fileID=%s", bucketID, fileID)
+
 	fileData, metadata, err := h.uploadService.DownloadFile(c.Request.Context(), bucketID, fileID)
 	if err != nil {
+		log.Printf("[HANDLER] DownloadFile: service error bucketID=%s fileID=%s err=%v", bucketID, fileID, err)
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
 
+	log.Printf("[HANDLER] DownloadFile: success fileID=%s key=%s size=%d mimeType=%s", fileID, metadata.Key, metadata.Size, metadata.MimeType)
+
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", metadata.Key))
 	c.Header("Content-Type", metadata.MimeType)
 	c.Header("Content-Length", fmt.Sprintf("%d", metadata.Size))
-
 	c.Data(http.StatusOK, metadata.MimeType, fileData)
 }
+
+
 
 // UpdateFileMetadata handles updating file metadata
 // PATCH /:bucketId/files/:fileId

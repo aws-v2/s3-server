@@ -417,37 +417,48 @@ func (s *UploadService) DownloadFile(ctx context.Context, bucketId, fileID strin
 		filterID = ""
 	}
 
+	log.Printf("[SERVICE] DownloadFile: start actorID=%s bucketID=%s fileID=%s isAdmin=%v", actor.ID, bucketId, fileID, IsAdmin(actor.ID))
+
 	bucket, err := s.resolveBucket(ctx, bucketId, filterID)
 	if err != nil {
+		log.Printf("[SERVICE] DownloadFile: resolveBucket failed bucketID=%s err=%v", bucketId, err)
 		return nil, nil, err
 	}
 
-	// Resolve file — system actor uses key-based fallback (GetFileByIDOrKey)
-	// to support internal lookups by object key on system-managed buckets.
-	// Regular actors resolve strictly by ID only.
-	var file *domain.File
+	log.Printf("[SERVICE] DownloadFile: bucket resolved bucketID=%s storageName=%s", bucket.ID, bucket.StorageName)
 
-	if actor.ID == "00000000-0000-0000-0000-000000000000" {
-		log.Printf("[S3] system actor: resolving file %s in bucket %s by ID or key", fileID, bucket.Name)
+	var file *domain.File
+	isSystemActor := actor.ID == "00000000-0000-0000-0000-000000000000"
+
+	if isSystemActor {
+		log.Printf("[SERVICE] DownloadFile: system actor — resolving file by ID or key fileID=%s bucketID=%s", fileID, bucket.ID)
 		file, err = s.fileRepo.GetFileByIDOrKey(ctx, fileID, bucket.ID)
 	} else {
+		log.Printf("[SERVICE] DownloadFile: regular actor — resolving file strictly by ID fileID=%s", fileID)
 		file, err = s.fileRepo.GetFileByID(ctx, fileID)
 	}
 
 	if err != nil {
+		log.Printf("[SERVICE] DownloadFile: file resolution failed fileID=%s err=%v", fileID, err)
 		return nil, nil, fmt.Errorf("file not found: %w", err)
 	}
 
-	log.Printf("[S3] resolved file metadata for %s: %+v", fileID, file)
+	log.Printf("[SERVICE] DownloadFile: file resolved fileID=%s key=%s bucketID=%s size=%d", file.ID, file.Key, file.BucketID, file.Size)
 
 	if file.BucketID != bucket.ID {
+		log.Printf("[SERVICE] DownloadFile: bucket mismatch fileBucketID=%s requestedBucketID=%s", file.BucketID, bucket.ID)
 		return nil, nil, fmt.Errorf("file not in specified bucket")
 	}
 
+	log.Printf("[SERVICE] DownloadFile: fetching object from storage storageName=%s key=%s", bucket.StorageName, file.Key)
+
 	data, err := s.storage.GetObject(ctx, bucket.StorageName, file.Key)
 	if err != nil {
+		log.Printf("[SERVICE] DownloadFile: storage.GetObject failed storageName=%s key=%s err=%v", bucket.StorageName, file.Key, err)
 		return nil, nil, fmt.Errorf("failed to retrieve file: %w", err)
 	}
+
+	log.Printf("[SERVICE] DownloadFile: object retrieved successfully key=%s bytes=%d", file.Key, len(data))
 
 	metadata := &dto.FileInfoOutput{
 		FileID:    file.ID,
@@ -463,6 +474,8 @@ func (s *UploadService) DownloadFile(ctx context.Context, bucketId, fileID strin
 		GetRequests:     1,
 		BytesDownloaded: int64(len(data)),
 	})
+
+	log.Printf("[SERVICE] DownloadFile: done fileID=%s metrics emitted async", fileID)
 
 	return data, metadata, nil
 }
