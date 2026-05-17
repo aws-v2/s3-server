@@ -437,19 +437,11 @@ func IsAdmin(userId string) bool {
 
 
 func (s *UploadService) DownloadFile(ctx context.Context, bucketId, fileID string, userID string) ([]byte, *dto.FileInfoOutput, error) {
-	role, _   := ctx.Value("role").(string)
-
-	// Build actor from the context values
-	actor := domain.Actor{
-		ID:   userID,
-		Role: role,
-	}
-
 	filterID := userID
 	if IsAdmin(userID) {
 		filterID = ""
 	}
-	log.Printf("[SERVICE] DownloadFile: start actorID=%s bucketID=%s fileID=%s isAdmin=%v", actor.ID, bucketId, fileID, IsAdmin(userID))
+	log.Printf("[SERVICE] DownloadFile: start actorID=%s bucketID=%s fileID=%s isAdmin=%v", userID, bucketId, fileID, IsAdmin(userID))
 
 	bucket, err := s.resolveBucket(ctx, bucketId, filterID)
 	if err != nil {
@@ -466,7 +458,7 @@ func (s *UploadService) DownloadFile(ctx context.Context, bucketId, fileID strin
 		log.Printf("[SERVICE] DownloadFile: system actor — resolving file by ID or key fileID=%s bucketID=%s", fileID, bucket.ID)
 		file, err = s.fileRepo.GetFileByIDOrKey(ctx, fileID, bucket.ID)
 	} else {
-		log.Printf("[SERVICE] DownloadFile: regular actor%s resolving file strictly by ID fileID=%s",actor.ID, fileID)
+		log.Printf("[SERVICE] DownloadFile: regular actor%s resolving file strictly by ID fileID=%s",userID, fileID)
 		file, err = s.fileRepo.GetFileByID(ctx, fileID)
 	}
 
