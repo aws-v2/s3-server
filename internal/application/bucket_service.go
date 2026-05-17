@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"os"
 	"s3/internal/domain"
 	"s3/internal/infrastructure/dto"
 	"s3/internal/infrastructure/metrics"
@@ -469,27 +468,27 @@ func (s *BucketService) SetBucketVersioning(ctx context.Context, bucketID string
 	return nil
 }
 
-// isAdmin checks whether the actor (like "user:abc123") is an admin.
-// In MVP mode, we load admin IDs from an env var: ADMIN_USERS=user:abc123,user:def456
-func IsAdmin(actorID string) bool {
-	admins := os.Getenv("ADMIN_USERS")
+// // isAdmin checks whether the actor (like "user:abc123") is an admin.
+// // In MVP mode, we load admin IDs from an env var: ADMIN_USERS=user:abc123,user:def456
+// func IsAdmin(actorID string) bool {
+// 	admins := os.Getenv("ADMIN_USERS")
 
-	// fallback for tests only
-	if strings.TrimSpace(admins) == "" {
-		admins = "550e8400-e29b-41d4-a716-446655440000" // Dummy admin ID
-	}
+// 	// fallback for tests only
+// 	if strings.TrimSpace(admins) == "" {
+// 		admins = "550e8400-e29b-41d4-a716-446655440000" // Dummy admin ID
+// 	}
 
-	for _, a := range strings.Split(admins, ",") {
-		adminID := strings.TrimSpace(a)
-		// Handle both "user:UUID" and "UUID" formats in the environment variable
-		adminID = strings.TrimPrefix(adminID, "user:")
+// 	for _, a := range strings.Split(admins, ",") {
+// 		adminID := strings.TrimSpace(a)
+// 		// Handle both "user:UUID" and "UUID" formats in the environment variable
+// 		adminID = strings.TrimPrefix(adminID, "user:")
 
-		if adminID == actorID {
-			return true
-		}
-	}
-	return false
-}
+// 		if adminID == actorID {
+// 			return true
+// 		}
+// 	}
+// 	return false
+// }
 
 func (s *BucketService) GetBucketVersioning(ctx context.Context, bucketID string) (*dto.VersioningOutput, error) {
 	actor, _ := ctx.Value("actor").(domain.Actor)

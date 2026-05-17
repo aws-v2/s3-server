@@ -410,13 +410,46 @@ func (s *UploadService) ListFiles(ctx context.Context, bucketName string) ([]dto
 
 	return output, nil
 }
+func IsAdmin(role string) bool {
+	return role == "SYSTEM" || role == "super_admin" || role == "system"
+}
+// isAdmin checks whether the actor (like "user:abc123") is an admin.
+// In MVP mode, we load admin IDs from an env var: ADMIN_USERS=user:abc123,user:def456
+// func IsAdmin(actorID string) bool {
+// 	admins := os.Getenv("ADMIN_USERS")
+
+// 	// fallback for tests only
+// 	if strings.TrimSpace(admins) == "" {
+// 		admins = "550e8400-e29b-41d4-a716-446655440000" // Dummy admin ID
+// 	}
+
+// 	for _, a := range strings.Split(admins, ",") {
+// 		adminID := strings.TrimSpace(a)
+// 		// Handle both "user:UUID" and "UUID" formats in the environment variable
+// 		adminID = strings.TrimPrefix(adminID, "user:")
+
+// 		if adminID == actorID {
+// 			return true
+// 		}
+// 	}
+// 	return false
+// }
+
+
 func (s *UploadService) DownloadFile(ctx context.Context, bucketId, fileID string) ([]byte, *dto.FileInfoOutput, error) {
-	actor, _ := ctx.Value("actor").(domain.Actor)
-	filterID := actor.ID
-	if IsAdmin(actor.ID) {
-		filterID = ""
+	userID, _ := ctx.Value("userId").(string)
+	role, _   := ctx.Value("role").(string)
+
+	// Build actor from the context values
+	actor := domain.Actor{
+		ID:   userID,
+		Role: role,
 	}
 
+	filterID := actor.ID
+	if IsAdmin(actor.Role) {
+		filterID = ""
+	}
 	log.Printf("[SERVICE] DownloadFile: start actorID=%s bucketID=%s fileID=%s isAdmin=%v", actor.ID, bucketId, fileID, IsAdmin(actor.ID))
 
 	bucket, err := s.resolveBucket(ctx, bucketId, filterID)
@@ -434,7 +467,7 @@ func (s *UploadService) DownloadFile(ctx context.Context, bucketId, fileID strin
 		log.Printf("[SERVICE] DownloadFile: system actor — resolving file by ID or key fileID=%s bucketID=%s", fileID, bucket.ID)
 		file, err = s.fileRepo.GetFileByIDOrKey(ctx, fileID, bucket.ID)
 	} else {
-		log.Printf("[SERVICE] DownloadFile: regular actor — resolving file strictly by ID fileID=%s", fileID)
+		log.Printf("[SERVICE] DownloadFile: regular actor%s resolving file strictly by ID fileID=%s",actor.ID, fileID)
 		file, err = s.fileRepo.GetFileByID(ctx, fileID)
 	}
 

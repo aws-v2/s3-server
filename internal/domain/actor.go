@@ -5,10 +5,11 @@ type ActorType string
 const (
 	ActorUser   ActorType = "user"
 	ActorService ActorType = "service"
+	ActorSystem ActorType = "SYSTEM"
 )
 
 type Actor struct {
 	ID   string
-	Type ActorType
+	Role string
 	Auth string // "api_key" | "bearer"
 }
