@@ -410,8 +410,8 @@ func (s *UploadService) ListFiles(ctx context.Context, bucketName string) ([]dto
 
 	return output, nil
 }
-func IsAdmin(role string) bool {
-	return role == "SYSTEM" || role == "super_admin" || role == "system"
+func IsAdmin(userId string) bool {
+	return userId == "00000000-0000-0000-0000-000000000000"
 }
 // isAdmin checks whether the actor (like "user:abc123") is an admin.
 // In MVP mode, we load admin IDs from an env var: ADMIN_USERS=user:abc123,user:def456
@@ -445,11 +445,11 @@ func (s *UploadService) DownloadFile(ctx context.Context, bucketId, fileID strin
 		Role: role,
 	}
 
-	filterID := actor.ID
-	if IsAdmin(actor.Role) {
+	filterID := userID
+	if IsAdmin(userID) {
 		filterID = ""
 	}
-	log.Printf("[SERVICE] DownloadFile: start actorID=%s bucketID=%s fileID=%s isAdmin=%v", actor.ID, bucketId, fileID, IsAdmin(actor.ID))
+	log.Printf("[SERVICE] DownloadFile: start actorID=%s bucketID=%s fileID=%s isAdmin=%v", actor.ID, bucketId, fileID, IsAdmin(userID))
 
 	bucket, err := s.resolveBucket(ctx, bucketId, filterID)
 	if err != nil {
@@ -460,7 +460,7 @@ func (s *UploadService) DownloadFile(ctx context.Context, bucketId, fileID strin
 	log.Printf("[SERVICE] DownloadFile: bucket resolved bucketID=%s storageName=%s", bucket.ID, bucket.StorageName)
 
 	var file *domain.File
-	isSystemActor := actor.ID == "00000000-0000-0000-0000-000000000000"
+	isSystemActor := userID == "00000000-0000-0000-0000-000000000000"
 
 	if isSystemActor {
 		log.Printf("[SERVICE] DownloadFile: system actor — resolving file by ID or key fileID=%s bucketID=%s", fileID, bucket.ID)
