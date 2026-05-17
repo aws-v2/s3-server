@@ -133,6 +133,45 @@ unmarshal:
 	return &file, nil
 }
 
+func (r *PostgresRepository) GetFileByID(ctx context.Context, id string) (*domain.File, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	query := `
+		SELECT id, bucket_id, key, size, mime_type, metadata, created_at 
+		FROM files 
+		WHERE id = $1
+	`
+
+	var file domain.File
+	var metadataJSON []byte
+
+	err := r.db.QueryRowContext(ctx, query, id).Scan(
+		&file.ID,
+		&file.BucketID,
+		&file.Key,
+		&file.Size,
+		&file.MimeType,
+		&metadataJSON,
+		&file.CreatedAt,
+	)
+
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("failed to get file: %w", err)
+	}
+
+	if len(metadataJSON) > 0 {
+		if err := json.Unmarshal(metadataJSON, &file.Metadata); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal metadata: %w", err)
+		}
+	}
+
+	return &file, nil
+}
+
 // SaveFile saves or updates a file record
 func (r *PostgresRepository) SaveFile(ctx context.Context, file domain.File) error {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
