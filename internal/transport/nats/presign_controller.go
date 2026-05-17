@@ -202,7 +202,6 @@ func (c *PresignController) handleCreatePresignedURL(msg *nats.Msg) {
 		log.Printf("[S3] Warning: could not ensure SYSTEM user: %v", err)
 	}
 
-	// bucketName, key := resolveAssetBucket(req)
 
 
 	bucketName, key, err := resolveAssetBucket(req)
@@ -232,7 +231,7 @@ func (c *PresignController) handleCreatePresignedURL(msg *nats.Msg) {
 
 	output, err := c.presignService.GenerateUploadURL(ctx, dto.GenerateUploadURLInput{
 		BucketID:  bucketID,
-		Key:       key,
+		Key:       key,// instead of the key it shouldbe the file id
 		ExpiresIn: 900,
 	})
 	if err != nil {
@@ -307,6 +306,10 @@ func resolveAssetBucket(req createPresignedURLRequest) (name, key string, err er
 
 
 func (c *PresignController) handleCreatePresignDownloadURL(msg *nats.Msg) {
+
+
+
+
 
 	var req createPresignDownloadURLRequest
 	if err := json.Unmarshal(msg.Data, &req); err != nil {

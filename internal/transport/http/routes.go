@@ -22,7 +22,7 @@ type Handlers struct {
 	AccessPoint  *AccessPointHandler
 	Security     *SecurityHandler
 	JWTValidator domain.JWTValidator
-	Docs *DocsHandler
+	Docs         *DocsHandler
 }
 
 // RegisterRoutes registers all application routes
@@ -38,11 +38,11 @@ func RegisterRoutes(router *gin.Engine, handlers *Handlers) {
 	// v1.Use(middleware.BearerAuthMiddleware(handlers.JWTValidator))------------>>IAM
 
 	// Track all V1 requests
-	v1.Use(handlers.Analytics.TrackRequestMiddleware())	
+	v1.Use(handlers.Analytics.TrackRequestMiddleware())
 
 	// Register domain-specific routes
 	registerObjectRoutes(v1, handlers.File)
-	registerBucketRoutes(v1, handlers,)
+	registerBucketRoutes(v1, handlers)
 	registerHealthRoutes(v1, handlers.Health)
 	registerWebhookRoutes(v1, handlers.Webhook)
 	registerMultipartRoutes(v1, handlers.Multipart)
@@ -52,7 +52,6 @@ func RegisterRoutes(router *gin.Engine, handlers *Handlers) {
 	registerSearchRoutes(v1, handlers.Search)
 	registerPrefixRoutes(v1, handlers.Prefix)
 	registerSecurityRoutes(v1, handlers.Security)
-
 
 	registerDocsRoutes(v1, handlers)
 
@@ -84,14 +83,15 @@ func registerDocsRoutes(v1 *gin.RouterGroup, handlers *Handlers) {
 		internal.GET("/:slug", handlers.Docs.GetInternalDoc)
 	}
 }
+
 // registerFileRoutes registers all file-related routes
 func registerObjectRoutes(v1 *gin.RouterGroup, handler *HandlerForFiles) {
 	object := v1.Group("/files")
-const (
-    KB = 1 << 10
-    MB = 1 << 20
-    GB = 1 << 30
-)
+	const (
+		KB = 1 << 10
+		MB = 1 << 20
+		GB = 1 << 30
+	)
 
 	// object.Use(middleware.APIKeyAuthMiddleware(validator))------------>>IAM
 
@@ -100,7 +100,7 @@ const (
 		object.POST("/upload/:bucketId",
 			middleware.AllowedFileTypesMiddleware(),
 			// middleware.MaxFileSizeMiddleware(10<<20),
-middleware.MaxFileSizeMiddleware(1 * GB),
+			middleware.MaxFileSizeMiddleware(1*GB),
 
 			handler.UploadFile)
 

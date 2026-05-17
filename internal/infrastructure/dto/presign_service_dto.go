@@ -7,7 +7,7 @@ import (
 // Input/Output DTOs
 type GenerateUploadURLInput struct {
 	BucketID string `json:"-"`
-	// FileID    string            `json:"-"`
+	FileID    string            `json:"file_id,omitempty"` // Optional, if not provided, server can generate a unique ID
 	Key         string            `json:"key" binding:"required"`
 	ExpiresIn   int               `json:"expiresIn"` // seconds, default 3600
 	ContentType string            `json:"contentType"`

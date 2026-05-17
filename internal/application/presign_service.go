@@ -74,7 +74,7 @@ func (s *PresignService) GenerateUploadURL(ctx context.Context, input dto.Genera
 	expiresAt := time.Now().Add(time.Duration(expiresIn) * time.Second)
 
 	// Generate signed URL
-	url := s.generateSignedURL(urlID, bucket.Name, input.Key, "PUT", expiresAt)
+	url := s.generateSignedURL(urlID, bucket.Name, input.FileID, "PUT", expiresAt)
 
 	// Save presigned URL metadata
 	presignedURL := &domain.PresignedURL{
@@ -112,8 +112,19 @@ func (s *PresignService) GenerateInternalURL(bucket, key, method string, expires
 }
 
 func (s *PresignService) generateSignedURL(urlID, bucket, key, method string, expiresAt time.Time) string {
-	baseURL := fmt.Sprintf("/api/v1/s3/buckets/%s/objects/%s", bucket, key)
+	baseURL := fmt.Sprintf("/api/v1/s3/files/%s/files/%s", bucket, key)
 	params := fmt.Sprintf("urlId=%s&expires=%d&method=%s", urlID, expiresAt.Unix(), method)
+
+
+
+
+//  file
+// 		object.GET("/:bucketId/files/:fileId/download", handler.DownloadFile)
+// api/v1/s3/files/the bucket/files/fileID
+// 		// Delete file
+
+
+
 
 	signature := s.signString(params)
 
