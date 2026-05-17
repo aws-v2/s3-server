@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"log"
 
 	"github.com/gin-gonic/gin"
 )
@@ -24,6 +25,8 @@ func AuthContextMiddleware() gin.HandlerFunc {
 		ctx = context.WithValue(ctx, "role", role)
 		ctx = context.WithValue(ctx, "authMethod", authMethod)
 		c.Request = c.Request.WithContext(ctx)
+
+		log.Printf("the user id is: %s", userID)
 
 		c.Next()
 	}
