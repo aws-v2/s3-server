@@ -222,7 +222,7 @@ func (h *HandlerForFiles) DownloadFile(c *gin.Context) {
 
 
 
-	log.Printf("[*HANDLER*] --->>", userID)
+	log.Printf("[*HANDLER*] --->> %s", userID)
 	log.Printf("[*HANDLER*] DownloadFile: bucketID=%s fileID=%s", bucketID, fileID)
 
 	signature := c.Query("signature")
