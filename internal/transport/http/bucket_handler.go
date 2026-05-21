@@ -33,7 +33,9 @@ func NewBucketHandler(bucketService *application.BucketService) *BucketHandler {
 
 // POST /buckets
 func (h *BucketHandler) CreateBucket(c *gin.Context) {
+	userId := c.GetString("userId")
 	var input dto.CreateBucketInput
+	input.OwnerId = userId
 	if err := c.ShouldBindJSON(&input); err != nil {
 
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON payload"})
