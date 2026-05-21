@@ -214,7 +214,7 @@ func main() {
 		ConnMaxIdleTime: cfg.Database.ConnMaxIdleTime,
 	}
 
-	slog.Info("Connecting to PostgreSQL...")
+	fmt.Printf("Connecting to postgres database", dbConfig.Database)
 	db, err := database.NewPostgresDB(dbConfig)
 	if err != nil {
 		slog.Error("Failed to connect to database", slog.Any("error", err))
@@ -227,7 +227,7 @@ func main() {
 	// Create IAM validator
 
 	// Run migrations
-	slog.Info("Running database migrations...")
+	slog.Info("Running database migrations---...",slog.String("url", dbConfig.Host))
 	version, dirty, err := database.GetMigrationVersion(db, dbConfig.Database)
 	if err == nil && dirty {
 		slog.Warn("Database is dirty, forcing version", slog.Uint64("version", uint64(version)))
