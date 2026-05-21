@@ -78,7 +78,9 @@ func (h *BucketHandler) CreateBucket(c *gin.Context) {
 // ListBuckets handles listing all available buckets
 // GET /buckets
 func (h *BucketHandler) ListBuckets(c *gin.Context) {
-	buckets, err := h.bucketService.ListBuckets(c.Request.Context())
+	userId := c.GetString("userId")
+
+	buckets, err := h.bucketService.ListBuckets(c.Request.Context(), userId)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

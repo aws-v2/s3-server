@@ -226,12 +226,16 @@ func (s *BucketService) GetBucket(ctx context.Context, bucketID string) (*dto.Ge
 	}, nil
 }
 
-func (s *BucketService) ListBuckets(ctx context.Context) ([]domain.Bucket, error) {
-	actor, _ := ctx.Value("actor").(domain.Actor)
-	filterID := actor.ID
-	if IsAdmin(actor.ID) {
+func (s *BucketService) ListBuckets(ctx context.Context, userId string) ([]domain.Bucket, error) {
+	filterID := userId
+	if IsAdmin(userId) {
 		filterID = ""
 	}
+
+
+fmt.Println("the filter id is: ", filterID)
+
+
 	buckets, err := s.bucketRepo.ListBuckets(ctx, filterID)
 	if err == nil {
 		// Emit metrics for List (Tier 2) - Note: This is an account-level list, but we can log it
