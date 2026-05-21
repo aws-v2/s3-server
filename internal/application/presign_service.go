@@ -5,10 +5,12 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log"
-
+	"net/url"
 	"s3/internal/domain"
 	"s3/internal/infrastructure/dto"
 	"s3/internal/infrastructure/metrics"
@@ -48,11 +50,26 @@ func NewPresignService(
 	}
 }
 
+func (s *PresignService) GetFileRepository() domain.FileRepository {
+	return s.fileRepo
+}
+
+
 // GenerateUploadURL creates a presigned URL for uploading
 func (s *PresignService) GenerateUploadURL(ctx context.Context, input dto.GenerateUploadURLInput) (*dto.GenerateUploadURLOutput, error) {
-	actor, _ := ctx.Value("actor").(domain.Actor)
-	filterID := actor.ID
-	if IsAdmin(actor.ID) {
+	
+		// BucketID:  bucketID,
+		// AssetType: string(req.AssetType),
+		// UserId: req.UserID,
+		// Sha256: req.Sha256,
+		// AssetID: req.AssetID,
+
+		// Key:       key, // instead of the key it shouldbe the file id
+		// ExpiresIn: 900,
+
+ 
+	filterID := input.UserId
+	if IsAdmin(input.UserId) {
 		filterID = ""
 	}
 
@@ -75,7 +92,7 @@ func (s *PresignService) GenerateUploadURL(ctx context.Context, input dto.Genera
 	expiresAt := time.Now().Add(time.Duration(expiresIn) * time.Second)
 
 	// Generate signed URL
-	url := s.generateSignedURL(urlID, bucket.Name, input.FileID, "PUT", expiresAt)
+	url := s.GenerateSignedURL(urlID, bucket.Name, input.Key,input.AssetID,input.UserId,input.Sha256, "PUT", expiresAt, nil)
 
 	// Save presigned URL metadata
 	presignedURL := &domain.PresignedURL{
@@ -102,32 +119,76 @@ func (s *PresignService) GenerateUploadURL(ctx context.Context, input dto.Genera
 		URLID:     urlID,
 		ExpiresAt: expiresAt,
 		Fields: map[string]string{
-			"Content-Type": input.ContentType,
+			"Content-Type": input.AssetType,
 		},
 	}, nil
 }
 
-func (s *PresignService) GenerateInternalURL(bucket, key, method string, expiresAt time.Time) string {
-	urlID := uuid.New().String()
+ 
 
 
 
-	// bucketID := c.Param("bucketId")
-	// fileID := c.Param("fileId")
+
+func (s *PresignService) GenerateSignedURL(
+	urlID string,
+	bucketID string,
+	key string,
+	assetID string,
+	userID string,
+	sha256Hash string,
+	method string,
+	expiresAt time.Time,
+fileID *string,
+) string {
+
+	payload := map[string]interface{}{
+		"u":   urlID,
+		"b":   bucketID,
+		"k":   key,
+		"a":   assetID,
+		"uid": userID,
+		"sha": sha256Hash,
+		"m":   method,
+		"e":   expiresAt.Unix(),
+	}
+
+	payloadJSON, _ := json.Marshal(payload)
+
+	// Base64URL encode payload
+	payloadEncoded := base64.RawURLEncoding.EncodeToString(payloadJSON)
+
+	// Sign ONLY encoded payload
+	signature := s.signString(payloadEncoded)
+
+	// Final token
+	token := payloadEncoded + "." + signature
+
+	values := url.Values{}
+	values.Set("t", token)
 
 
-
-	return s.generateSignedURL(urlID, bucket, key, method, expiresAt)
+if method == "GET" {
+	return fmt.Sprintf(
+		"/api/v1/s3/files/%s/files/%s/download?%s",
+		bucketID,
+		*fileID,
+		values.Encode(),
+	)
+}else{
+	return fmt.Sprintf(
+		"/api/v1/s3/files/upload?%s",
+		values.Encode(),
+	)
+}
 }
 
-func (s *PresignService) generateSignedURL(urlID, bucket, key, method string, expiresAt time.Time) string {
-	baseURL := fmt.Sprintf("/api/v1/s3/files/%s/files/%s/download", bucket, key)
 
-	exp := expiresAt.Unix()
-	signature := s.signString(key + method + fmt.Sprintf("%d", exp))
 
-	return fmt.Sprintf("%s?signature=%s&expires=%d", baseURL, signature, exp)
-}
+
+
+
+
+
 
 
 
@@ -168,7 +229,7 @@ func (s *PresignService) GenerateDownloadURL(ctx context.Context, input dto.Gene
 	urlID := uuid.New().String()
 	expiresAt := time.Now().Add(time.Duration(expiresIn) * time.Second)
 
-	url := s.generateSignedURL(urlID, bucket.Name, file.Key, "GET", expiresAt)
+	url := s.GenerateSignedURL(urlID, bucket.Name, file.Key,input.AssetID,input.UserID,input.Sha256, "GET", expiresAt, &file.ID)
 
 
 

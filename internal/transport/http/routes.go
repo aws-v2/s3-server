@@ -104,6 +104,14 @@ func registerObjectRoutes(v1 *gin.RouterGroup, handler *HandlerForFiles) {
 
 			handler.UploadFile)
 
+			// Upload file to bucket
+		object.PUT("/upload",
+			middleware.AllowedFileTypesMiddleware(),
+			// middleware.MaxFileSizeMiddleware(10<<20),
+			middleware.MaxFileSizeMiddleware(1*GB),
+
+			handler.UploadFilePresign)
+
 		// Create direct folder
 		object.POST("/folders/:bucketId", handler.CreateFolder)
 

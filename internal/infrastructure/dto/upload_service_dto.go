@@ -12,6 +12,7 @@ type FileInfoOutput struct {
     Size      int64           `json:"size"`
     MimeType  string          `json:"mime_type"`
     Metadata  map[string]string `json:"metadata"`
+    SHA256    string          `json:"sha256"`
     CreatedAt time.Time       `json:"created_at"`
 }
 

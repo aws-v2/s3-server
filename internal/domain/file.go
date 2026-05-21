@@ -11,6 +11,7 @@ type File struct {
 	MimeType     string            `gorm:"size:255"`
 	ContentType  string            `gorm:"size:255"`
 	StorageClass string            `gorm:"size:50;default:'STANDARD'"`
+	SHA256       string            `gorm:"size:64;default:'not_calculated_yet'"`
 	Metadata     map[string]string `gorm:"type:jsonb"` // use "json" if MySQL
 	CreatedAt    time.Time         `gorm:"autoCreateTime"`
 	UpdatedAt    time.Time         `gorm:"autoUpdateTime"`

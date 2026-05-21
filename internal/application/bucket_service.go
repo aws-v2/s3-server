@@ -179,6 +179,26 @@ func (s *BucketService) GetBucketByName(ctx context.Context, name string) (*doma
 	return &bucket, nil
 }
 
+func (s *BucketService) GetBucketByID(ctx context.Context, id string) (*domain.Bucket, error) {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	bucket, err := s.bucketRepo.GetBucketByID(ctx, id, filterID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &bucket, nil
+}
+
+func (s *BucketService) GetBucketRepository() domain.BucketRepository {
+	return s.bucketRepo
+}
+
+
 func (s *BucketService) GetBucket(ctx context.Context, bucketID string) (*dto.GetBucketOutput, error) {
 	actor, _ := ctx.Value("actor").(domain.Actor)
 	filterID := actor.ID

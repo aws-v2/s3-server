@@ -11,7 +11,10 @@ import (
 	"s3/internal/domain"
 	"s3/internal/infrastructure/dto"
 	"s3/internal/infrastructure/metrics"
+	"s3/internal/infrastructure/utils"
 
+	"crypto/sha256"
+	"encoding/hex"
 	"github.com/google/uuid"
 )
 
@@ -56,11 +59,17 @@ func (s *UploadService) UploadObjectReader(ctx context.Context, bucketID, key st
 		return err
 	}
 
+	// Calculate SHA256 while saving
+	hash := sha256.New()
+	teeReader := io.TeeReader(reader, hash)
+
 	// Save object to storage
-	err = s.storage.SaveObjectReader(ctx, bucket.StorageName, key, reader, size, metadata)
+	err = s.storage.SaveObjectReader(ctx, bucket.StorageName, key, teeReader, size, metadata)
 	if err != nil {
 		return fmt.Errorf("failed to save object %s: %w", key, err)
 	}
+
+	sha256Value := hex.EncodeToString(hash.Sum(nil))
 
 	// Save file metadata in DB
 	file := domain.File{
@@ -70,6 +79,7 @@ func (s *UploadService) UploadObjectReader(ctx context.Context, bucketID, key st
 		Size:      size,
 		MimeType:  contentType,
 		Metadata:  metadata,
+		SHA256:    sha256Value,
 		CreatedAt: time.Now(),
 	}
 
@@ -104,7 +114,9 @@ func (s *UploadService) UploadObjectReader(ctx context.Context, bucketID, key st
 			
 			if err == nil && gameID > 0 {
 				// Generate internal download URL for the backend/ec2 (valid for 1 hour)
-				downloadURL := s.presign.GenerateInternalURL(bucket.Name, cleanKey, "GET", time.Now().Add(1*time.Hour))
+				downloadURL := s.presign.GenerateSignedURL(uuid.New().String(),bucket.Name, cleanKey, 	"asset-id",
+					"",
+					"sha256","GET", time.Now().Add(1*time.Hour), &file.ID)
 
 				event := map[string]interface{}{
 					"game_id":      gameID,
@@ -184,9 +196,16 @@ func (s *UploadService) resolveBucket(ctx context.Context, idOrName string, filt
 
 	return domain.Bucket{}, fmt.Errorf("bucket not found: %s", idOrName)
 }
+func (s *UploadService) UploadFile(
+	ctx context.Context,
+	input UploadFileInput,
+) (*UploadFileOutput, error) {
 
-func (s *UploadService) UploadFile(ctx context.Context, input UploadFileInput) (*UploadFileOutput, error) {
+	start := time.Now()
+
 	userID, _ := ctx.Value("userId").(string)
+	requestID, _ := ctx.Value("requestId").(string)
+
 	filterID := userID
 	role, _ := ctx.Value("role").(string)
 
@@ -194,11 +213,33 @@ func (s *UploadService) UploadFile(ctx context.Context, input UploadFileInput) (
 		filterID = ""
 	}
 
+	log.Printf(
+		"[UploadService] started request_id=%s user_id=%s bucket_id=%s files=%d",
+		requestID,
+		userID,
+		input.BucketID,
+		len(input.Files),
+	)
+
 	// Resolve bucket by ID or Name
 	bucket, err := s.resolveBucket(ctx, input.BucketID, filterID)
 	if err != nil {
+		log.Printf(
+			"[UploadService] bucket resolution failed request_id=%s bucket_id=%s error=%v",
+			requestID,
+			input.BucketID,
+			err,
+		)
+
 		return nil, err
 	}
+
+	log.Printf(
+		"[UploadService] bucket resolved request_id=%s storage_name=%s owner_id=%s",
+		requestID,
+		bucket.StorageName,
+		bucket.OwnerID,
+	)
 
 	var fileIDs []string
 	var totalBytes int64
@@ -210,27 +251,75 @@ func (s *UploadService) UploadFile(ctx context.Context, input UploadFileInput) (
 	}
 
 	for _, f := range input.Files {
+		fileStart := time.Now()
+
 		totalBytes += f.Size
-		// ...
-		// Use actual binary data if provided
+
+		log.Printf(
+			"[UploadService] processing file request_id=%s filename=%s size=%d",
+			requestID,
+			f.Name,
+			f.Size,
+		)
+
 		fileData := f.Data
 		if len(fileData) == 0 {
+			log.Printf(
+				"[UploadService] using placeholder data request_id=%s filename=%s",
+				requestID,
+				f.Name,
+			)
+
 			fileData = []byte("placeholder data for " + f.Name)
 		}
 
-		// Prepend prefix to filename if provided
 		objectKey := f.Name
 		if input.Prefix != "" {
-			objectKey = fmt.Sprintf("%s/%s", strings.TrimSuffix(input.Prefix, "/"), f.Name)
+			objectKey = fmt.Sprintf(
+				"%s/%s",
+				strings.TrimSuffix(input.Prefix, "/"),
+				f.Name,
+			)
 		}
 
-		// Save to MinIO
-		err = s.storage.SaveObject(ctx, bucket.StorageName, objectKey, fileData, metaMap)
+		log.Printf(
+			"[UploadService] saving object request_id=%s object_key=%s bucket=%s",
+			requestID,
+			objectKey,
+			bucket.StorageName,
+		)
+
+		err = s.storage.SaveObject(
+			ctx,
+			bucket.StorageName,
+			objectKey,
+			fileData,
+			metaMap,
+		)
+
 		if err != nil {
-			return nil, fmt.Errorf("failed to save object %s: %w", objectKey, err)
+			log.Printf(
+				"[UploadService] object save failed request_id=%s object_key=%s error=%v",
+				requestID,
+				objectKey,
+				err,
+			)
+
+			return nil, fmt.Errorf(
+				"failed to save object %s: %w",
+				objectKey,
+				err,
+			)
 		}
 
-		// Save to DB
+		log.Printf(
+			"[UploadService] object saved request_id=%s object_key=%s",
+			requestID,
+			objectKey,
+		)
+
+		sha256Value := utils.CalculateSHA256Bytes(fileData)
+
 		file := domain.File{
 			ID:        generateID(),
 			BucketID:  bucket.ID,
@@ -238,26 +327,74 @@ func (s *UploadService) UploadFile(ctx context.Context, input UploadFileInput) (
 			Size:      f.Size,
 			MimeType:  f.Type,
 			Metadata:  metaMap,
+			SHA256:    sha256Value,
 			CreatedAt: time.Now(),
 		}
 
+		log.Printf(
+			"[UploadService] saving metadata request_id=%s file_id=%s object_key=%s",
+			requestID,
+			file.ID,
+			objectKey,
+		)
+
 		err = s.fileRepo.SaveFile(ctx, file)
 		if err != nil {
-			return nil, fmt.Errorf("failed to save file metadata for %s: %w", f.Name, err)
+			log.Printf(
+				"[UploadService] metadata save failed request_id=%s file_id=%s error=%v",
+				requestID,
+				file.ID,
+				err,
+			)
+
+			return nil, fmt.Errorf(
+				"failed to save file metadata for %s: %w",
+				f.Name,
+				err,
+			)
 		}
+
+		log.Printf(
+			"[UploadService] file completed request_id=%s file_id=%s duration=%s",
+			requestID,
+			file.ID,
+			time.Since(fileStart),
+		)
 
 		fileIDs = append(fileIDs, file.ID)
 	}
 
-	// Emit metrics for upload (Tier 1 + Bytes)
-	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
-		PutRequests:   int64(len(input.Files)),
-		BytesUploaded: totalBytes,
-	})
+	log.Printf(
+		"[UploadService] emitting metrics request_id=%s total_bytes=%d",
+		requestID,
+		totalBytes,
+	)
+
+	go s.emitMetrics(
+		context.Background(),
+		bucket.ID,
+		bucket.OwnerID,
+		bucket.Region,
+		dto.S3IngestRequest{
+			PutRequests:   int64(len(input.Files)),
+			BytesUploaded: totalBytes,
+		},
+	)
+
+	log.Printf(
+		"[UploadService] completed request_id=%s uploaded_files=%d total_bytes=%d duration=%s",
+		requestID,
+		len(fileIDs),
+		totalBytes,
+		time.Since(start),
+	)
 
 	return &UploadFileOutput{
 		FileIDs:   fileIDs,
-		Result:    fmt.Sprintf("Successfully processed %d files", len(input.Files)),
+		Result:    fmt.Sprintf(
+			"Successfully processed %d files",
+			len(input.Files),
+		),
 		CreatedAt: time.Now(),
 	}, nil
 }
@@ -366,6 +503,7 @@ func (s *UploadService) GetFileInfo(ctx context.Context, bucketID, fileID string
 		Size:      file.Size,
 		MimeType:  file.MimeType,
 		Metadata:  file.Metadata,
+		SHA256:    file.SHA256,
 		CreatedAt: file.CreatedAt,
 	}, nil
 }
@@ -404,6 +542,7 @@ func (s *UploadService) ListFiles(ctx context.Context, bucketName string) ([]dto
 			Size:      file.Size,
 			MimeType:  file.MimeType,
 			Metadata:  file.Metadata,
+			SHA256:    file.SHA256,
 			CreatedAt: file.CreatedAt,
 		})
 	}
@@ -491,6 +630,7 @@ func (s *UploadService) DownloadFile(ctx context.Context, bucketId, fileID strin
 		Size:      file.Size,
 		MimeType:  file.MimeType,
 		Metadata:  file.Metadata,
+		SHA256:    file.SHA256,
 		CreatedAt: file.CreatedAt,
 	}
 
@@ -543,6 +683,7 @@ func (s *UploadService) UpdateFileMetadata(ctx context.Context, bucketID, fileID
 		Size:      file.Size,
 		MimeType:  file.MimeType,
 		Metadata:  file.Metadata,
+		SHA256:    file.SHA256,
 		CreatedAt: file.CreatedAt,
 	}, nil
 }
@@ -591,6 +732,7 @@ func (s *UploadService) CopyFile(ctx context.Context, sourceBucketID, fileID str
 		Size:      file.Size,
 		MimeType:  file.MimeType,
 		Metadata:  file.Metadata,
+		SHA256:    file.SHA256,
 		CreatedAt: time.Now(),
 	}
 
@@ -613,6 +755,7 @@ func (s *UploadService) CopyFile(ctx context.Context, sourceBucketID, fileID str
 		Size:      newFile.Size,
 		MimeType:  newFile.MimeType,
 		Metadata:  newFile.Metadata,
+		SHA256:    newFile.SHA256,
 		CreatedAt: newFile.CreatedAt,
 	}, nil
 }
@@ -681,6 +824,31 @@ func (s *UploadService) MoveFile(ctx context.Context, sourceBucketName, fileID s
 		Size:      file.Size,
 		MimeType:  file.MimeType,
 		Metadata:  file.Metadata,
+		SHA256:    file.SHA256,
 		CreatedAt: file.CreatedAt,
 	}, nil
 }
+
+func (s *UploadService) GetFilesBySHA256(ctx context.Context, sha256 string) ([]dto.FileInfoOutput, error) {
+	files, err := s.fileRepo.GetFilesBySHA256(ctx, sha256)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get files by sha256: %w", err)
+	}
+
+	var output []dto.FileInfoOutput
+	for _, file := range files {
+		output = append(output, dto.FileInfoOutput{
+			FileID:    file.ID,
+			BucketID:  file.BucketID, // This will be the ID, might need resolve to Name
+			Key:       file.Key,
+			Size:      file.Size,
+			MimeType:  file.MimeType,
+			Metadata:  file.Metadata,
+			SHA256:    file.SHA256,
+			CreatedAt: file.CreatedAt,
+		})
+	}
+
+	return output, nil
+}
+

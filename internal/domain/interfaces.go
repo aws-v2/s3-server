@@ -43,6 +43,8 @@ type FileRepository interface {
 	ListFilesByPrefix(ctx context.Context, bucketID, prefix string, limit int) ([]File, error)
 	CountFilesByPrefix(ctx context.Context, bucketID, prefix string) (int, error)
 	DeleteFilesByBucket(ctx context.Context, bucketID string) error
+	GetFilesBySHA256(ctx context.Context, sha256 string) ([]File, error)
+	GetFilesByARN(ctx context.Context, arn string) ([]File, error)
 }
 
 type BucketRepository interface {

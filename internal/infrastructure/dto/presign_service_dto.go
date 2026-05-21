@@ -7,11 +7,13 @@ import (
 // Input/Output DTOs
 type GenerateUploadURLInput struct {
 	BucketID string `json:"-"`
-	FileID    string            `json:"file_id,omitempty"` // Optional, if not provided, server can generate a unique ID
+	AssetID    string            `json:"asset_id,omitempty"` // Optional, if not provided, server can generate a unique ID
 	Key         string            `json:"key" binding:"required"`
 	ExpiresIn   int               `json:"expiresIn"` // seconds, default 3600
-	ContentType string            `json:"contentType"`
+	AssetType string            `json:"contentType"`
 	Metadata    map[string]string `json:"metadata"`
+	UserId      string            `json:"user_id"`
+	Sha256      string            `json:"sha256"`
 }
 
 type GenerateUploadURLOutput struct {
@@ -25,6 +27,9 @@ type GenerateDownloadURLInput struct {
 	BucketID  string `json:"-"`
 	FileID    string `json:"-"`
 	ExpiresIn int    `json:"expiresIn"` // seconds, default 3600
+	AssetID string `json:"asset_id,omitempty"`
+	UserID string `json:"user_id,omitempty"`
+	Sha256 string `json:"sha256,omitempty"`
 }
 
 type GenerateDownloadURLOutput struct {

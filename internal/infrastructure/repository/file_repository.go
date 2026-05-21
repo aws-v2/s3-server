@@ -14,7 +14,7 @@ import (
 // GetFileByKey implements domain.RepositoryPort.
 func (r *PostgresRepository) GetFileByKey(ctx context.Context, bucketID string, key string) (*domain.File, error) {
 	query := `
-		SELECT id, bucket_id, key, size, mime_type, metadata, created_at
+		SELECT id, bucket_id, key, size, mime_type, metadata, sha256, created_at
 		FROM files
 		WHERE bucket_id = $1 AND key = $2
 		LIMIT 1
@@ -31,6 +31,7 @@ func (r *PostgresRepository) GetFileByKey(ctx context.Context, bucketID string, 
 		&file.Size,
 		&contentType,
 		&metadataJSON,
+		&file.SHA256,
 		&file.CreatedAt,
 	)
 	if contentType.Valid {
@@ -66,7 +67,7 @@ func (r *PostgresRepository) GetFileByIDOrKey(ctx context.Context, idOrKey strin
 	log.Printf("[REPOSITORY] GetFileByIDOrKey: start idOrKey=%s bucketID=%s", idOrKey, bucketID)
 
 	query := `
-		SELECT id, bucket_id, key, size, mime_type, metadata, created_at 
+		SELECT id, bucket_id, key, size, mime_type, metadata, sha256, created_at 
 		FROM files 
 		WHERE id = $1
 	`
@@ -76,7 +77,7 @@ func (r *PostgresRepository) GetFileByIDOrKey(ctx context.Context, idOrKey strin
 
 	err := r.db.QueryRowContext(ctx, query, idOrKey).Scan(
 		&file.ID, &file.BucketID, &file.Key, &file.Size,
-		&file.MimeType, &metadataJSON, &file.CreatedAt,
+		&file.MimeType, &metadataJSON, &file.SHA256, &file.CreatedAt,
 	)
 
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -97,7 +98,7 @@ func (r *PostgresRepository) GetFileByIDOrKey(ctx context.Context, idOrKey strin
 		log.Printf("[REPOSITORY] GetFileByIDOrKey: not found by ID, falling back to key lookup key=%s", idOrKey)
 
 		keyQuery := `
-			SELECT id, bucket_id, key, size, mime_type, metadata, created_at 
+			SELECT id, bucket_id, key, size, mime_type, metadata, sha256, created_at 
 			FROM files 
 			WHERE key = $1 AND bucket_id = $2
 			ORDER BY created_at DESC
@@ -106,7 +107,7 @@ func (r *PostgresRepository) GetFileByIDOrKey(ctx context.Context, idOrKey strin
 
 		err = r.db.QueryRowContext(ctx, keyQuery, idOrKey, bucketID).Scan(
 			&file.ID, &file.BucketID, &file.Key, &file.Size,
-			&file.MimeType, &metadataJSON, &file.CreatedAt,
+			&file.MimeType, &metadataJSON, &file.SHA256, &file.CreatedAt,
 		)
 
 		if err != nil {
@@ -138,7 +139,7 @@ func (r *PostgresRepository) GetFileByID(ctx context.Context, id string) (*domai
 	defer cancel()
 
 	query := `
-		SELECT id, bucket_id, key, size, mime_type, metadata, created_at 
+		SELECT id, bucket_id, key, size, mime_type, metadata, sha256, created_at 
 		FROM files 
 		WHERE id = $1
 	`
@@ -153,6 +154,7 @@ func (r *PostgresRepository) GetFileByID(ctx context.Context, id string) (*domai
 		&file.Size,
 		&file.MimeType,
 		&metadataJSON,
+		&file.SHA256,
 		&file.CreatedAt,
 	)
 
@@ -183,18 +185,19 @@ func (r *PostgresRepository) SaveFile(ctx context.Context, file domain.File) err
 	}
 
 	query := `
-		INSERT INTO files (id, bucket_id, key, size, mime_type, metadata, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO files (id, bucket_id, key, size, mime_type, metadata, sha256, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		ON CONFLICT (bucket_id, key) DO UPDATE 
 		SET size = EXCLUDED.size,
 		    mime_type = EXCLUDED.mime_type,
 		    metadata = EXCLUDED.metadata,
+		    sha256 = EXCLUDED.sha256,
 		    created_at = EXCLUDED.created_at
 	`
 
 	_, err = r.db.ExecContext(ctx, query,
 		file.ID, file.BucketID, file.Key, file.Size,
-		file.MimeType, metadataJSON, file.CreatedAt,
+		file.MimeType, metadataJSON, file.SHA256, file.CreatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to save file: %w", err)
@@ -209,7 +212,7 @@ func (r *PostgresRepository) ListFiles(ctx context.Context, bucketID string) ([]
 	defer cancel()
 
 	query := `
-		SELECT id, bucket_id, key, size, mime_type, metadata, created_at
+		SELECT id, bucket_id, key, size, mime_type, metadata, sha256, created_at
 		FROM files
 		WHERE bucket_id = $1
 		ORDER BY created_at DESC
@@ -234,6 +237,7 @@ func (r *PostgresRepository) ListFiles(ctx context.Context, bucketID string) ([]
 			&file.Size,
 			&mimeType,
 			&metadataJSON,
+			&file.SHA256,
 			&file.CreatedAt,
 		)
 		if err != nil {
@@ -308,7 +312,7 @@ func (r *PostgresRepository) DeleteFilesByBucket(ctx context.Context, bucketID s
 // ListFilesByPrefix implements domain.RepositoryPort.
 func (r *PostgresRepository) ListFilesByPrefix(ctx context.Context, bucketID, prefix string, limit int) ([]domain.File, error) {
 	query := `
-		SELECT id, bucket_id, key, size, mime_type, metadata, created_at
+		SELECT id, bucket_id, key, size, mime_type, metadata, sha256, created_at
 		FROM files
 		WHERE bucket_id = $1 AND key LIKE $2
 		ORDER BY key
@@ -339,8 +343,9 @@ func (r *PostgresRepository) ListFilesByPrefix(ctx context.Context, bucketID, pr
 			&file.BucketID,
 			&file.Key,
 			&file.Size,
-			&contentType,
+			&file.MimeType,
 			&metadataJSON,
+			&file.SHA256,
 			&file.CreatedAt,
 		)
 		if contentType.Valid {
@@ -383,7 +388,7 @@ func (r *PostgresRepository) CountFilesByPrefix(ctx context.Context, bucketID, p
 // SearchFilesByName implements domain.RepositoryPort.
 func (r *PostgresRepository) SearchFilesByName(ctx context.Context, bucketID, query string, limit int) ([]domain.File, error) {
 	querySQL := `
-		SELECT id, bucket_id, key, size, content_type, metadata, version, created_at, updated_at
+		SELECT id, bucket_id, key, size, content_type, metadata, sha256, version, created_at, updated_at
 		FROM files
 		WHERE ($1 = '' OR bucket_id = $1) AND key ILIKE $2
 		ORDER BY key
@@ -408,7 +413,7 @@ func (r *PostgresRepository) SearchFilesByName(ctx context.Context, bucketID, qu
 // SearchFilesByMetadata implements domain.RepositoryPort.
 func (r *PostgresRepository) SearchFilesByMetadata(ctx context.Context, bucketID string, metadata map[string]string, limit int) ([]domain.File, error) {
 	querySQL := `
-		SELECT id, bucket_id, key, size, content_type, metadata, version, created_at, updated_at
+		SELECT id, bucket_id, key, size, content_type, metadata, sha256, version, created_at, updated_at
 		FROM files
 		WHERE ($1 = '' OR bucket_id = $1) AND metadata @> $2
 	`
@@ -434,7 +439,7 @@ func (r *PostgresRepository) SearchFilesByMetadata(ctx context.Context, bucketID
 func (r *PostgresRepository) SearchFilesByTags(ctx context.Context, bucketID string, tags []string, limit int) ([]domain.File, error) {
 	// Search for tags stored in metadata
 	querySQL := `
-		SELECT id, bucket_id, key, size, content_type, metadata, version, created_at, updated_at
+		SELECT id, bucket_id, key, size, content_type, metadata, sha256, version, created_at, updated_at
 		FROM files
 		WHERE ($1 = '' OR bucket_id = $1) AND metadata->>'tags' LIKE ANY($2)
 	`
@@ -463,7 +468,7 @@ func (r *PostgresRepository) SearchFilesByTags(ctx context.Context, bucketID str
 // AdvancedSearchFiles implements domain.RepositoryPort.
 func (r *PostgresRepository) AdvancedSearchFiles(ctx context.Context, input domain.AdvancedSearchInput) ([]domain.File, error) {
 	querySQL := `
-		SELECT id, bucket_id, key, size, content_type, metadata, version, created_at, updated_at
+		SELECT id, bucket_id, key, size, content_type, metadata, sha256, version, created_at, updated_at
 		FROM files
 		WHERE 1=1
 	`
@@ -538,7 +543,7 @@ func (r *PostgresRepository) scanFiles(rows *sql.Rows) ([]domain.File, error) {
 		var contentType sql.NullString
 		err := rows.Scan(
 			&file.ID, &file.BucketID, &file.Key, &file.Size,
-			&contentType, &metadataJSON, &file.Version,
+			&contentType, &metadataJSON, &file.SHA256, &file.Version,
 			&file.CreatedAt, &file.UpdatedAt,
 		)
 		if contentType.Valid {
@@ -647,3 +652,115 @@ func (r *PostgresRepository) SaveSearchQuery(ctx context.Context, search *domain
 		search.Description, search.CreatedAt, search.UpdatedAt)
 	return err
 }
+
+// GetFilesBySHA256 retrieves all files matching a specific sha256 hash
+func (r *PostgresRepository) GetFilesBySHA256(ctx context.Context, sha256 string) ([]domain.File, error) {
+	query := `
+		SELECT id, bucket_id, key, size, mime_type, metadata, sha256, created_at
+		FROM files
+		WHERE sha256 = $1
+		ORDER BY created_at DESC
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, sha256)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query files by sha256: %w", err)
+	}
+	defer rows.Close()
+
+	var files []domain.File
+	for rows.Next() {
+		var file domain.File
+		var metadataJSON []byte
+		var mimeType sql.NullString
+
+		err := rows.Scan(
+			&file.ID,
+			&file.BucketID,
+			&file.Key,
+			&file.Size,
+			&mimeType,
+			&metadataJSON,
+			&file.SHA256,
+			&file.CreatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan file: %w", err)
+		}
+
+		if mimeType.Valid {
+			file.MimeType = mimeType.String
+		}
+
+		if len(metadataJSON) > 0 {
+			if err = json.Unmarshal(metadataJSON, &file.Metadata); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal metadata: %w", err)
+			}
+		}
+
+		files = append(files, file)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating files: %w", err)
+	}
+
+	return files, nil
+}
+
+
+// GetFilesBySHA256 retrieves all files matching a specific sha256 hash
+func (r *PostgresRepository) GetFilesByARN(ctx context.Context, sha256 string) ([]domain.File, error) {
+	query := `
+		SELECT id, bucket_id, key, size, mime_type, metadata, sha256, created_at
+		FROM files
+		WHERE sha256 = $1
+		ORDER BY created_at DESC
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, sha256)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query files by sha256: %w", err)
+	}
+	defer rows.Close()
+
+	var files []domain.File
+	for rows.Next() {
+		var file domain.File
+		var metadataJSON []byte
+		var mimeType sql.NullString
+
+		err := rows.Scan(
+			&file.ID,
+			&file.BucketID,
+			&file.Key,
+			&file.Size,
+			&mimeType,
+			&metadataJSON,
+			&file.SHA256,
+			&file.CreatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan file: %w", err)
+		}
+
+		if mimeType.Valid {
+			file.MimeType = mimeType.String
+		}
+
+		if len(metadataJSON) > 0 {
+			if err = json.Unmarshal(metadataJSON, &file.Metadata); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal metadata: %w", err)
+			}
+		}
+
+		files = append(files, file)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating files: %w", err)
+	}
+
+	return files, nil
+}
+
