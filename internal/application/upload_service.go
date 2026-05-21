@@ -194,8 +194,16 @@ func (s *UploadService) resolveBucket(ctx context.Context, idOrName string, filt
 		return bucket, nil
 	}
 
+
+
+	
 	return domain.Bucket{}, fmt.Errorf("bucket not found: %s", idOrName)
 }
+
+
+
+
+
 func (s *UploadService) UploadFile(
 	ctx context.Context,
 	input UploadFileInput,

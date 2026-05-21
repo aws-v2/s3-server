@@ -143,10 +143,60 @@ func (c *PresignController) Start() error {
 		return fmt.Errorf("failed to subscribe to get_file_info: %w", err)
 	}
 
+
+
+
+	newUserSubj := fmt.Sprintf("%s.user.registered", c.natsPrefix)
+	_, err = c.conn.Subscribe(newUserSubj, c.handleNewUserEvent)
+	if err != nil {
+		return fmt.Errorf("failed to subscribe to get_file_info: %w", err)
+	}
+
+
+
+
 	log.Printf("[S3] NATS Listener started")
 
 	return nil
 }
+// New handler — correct NATS signature
+func (c *PresignController) handleNewUserEvent(msg *nats.Msg) {
+	ctx := context.Background()
+		log.Printf("[S3] failed to parse Newuser created")
+
+	// parse the event payload
+	var event struct {
+		TenantID string `json:"tenant_id"`
+	}
+	if err := json.Unmarshal(msg.Data, &event); err != nil {
+		log.Printf("[S3] failed to parse system_user_created payload: %v", err)
+		return
+	}
+
+	defaultBuckets := []string{
+		"gameliftgames-defualt",
+		"aibucket-defualt",
+	//     "libvirt-templates-system",
+	//     "agent-binary-system",
+	//     "system-bucket-1",
+	//     "system-bucket-2",
+	//     "system-bucket-3",
+	//     "system-bucket-4",
+	//     "system-bucket-5",
+	}
+
+	log.Printf("[S3] Ensuring default buckets for tenant: %s", event.TenantID)
+
+	for _, bucketName := range defaultBuckets {
+		_, err := c.ensureDefaultBucket(ctx, bucketName, event.TenantID)
+		if err != nil {
+			log.Printf("[S3] Failed to ensure system bucket %s: %v", bucketName, err)
+		} else {
+			log.Printf("[S3] System bucket ready: %s", bucketName)
+		}
+	}
+}
+
 
 // New handler — correct NATS signature
 func (c *PresignController) handleSystemUserCreated(msg *nats.Msg) {
@@ -190,7 +240,7 @@ func (c *PresignController) ensureDefaultBucket(ctx context.Context, bucketName 
 		return bucket.ID, nil
 	}
 
-	log.Printf("[S3] Bucket %s not found, creating under SYSTEM...", bucketName)
+	log.Printf("[S3] Bucket %s not found, creating under User...", bucketName)
 
 	newBucket, err := c.bucketService.CreateBucket(ctx, dto.CreateBucketInput{
 		Name:    bucketName,
