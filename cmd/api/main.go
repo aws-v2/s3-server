@@ -8,7 +8,7 @@ import (
 	"s3/internal/application"
 
 	"s3/internal/infrastructure/config"
-	"s3/internal/infrastructure/database"
+	"s3/database"
 	"s3/internal/infrastructure/event"
 	"s3/internal/infrastructure/logging"
 	"s3/internal/infrastructure/metrics"
