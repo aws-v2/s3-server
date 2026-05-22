@@ -187,6 +187,7 @@ type UploadFileOutput struct {
 	FileIDs   []string
 	Result    string
 	CreatedAt time.Time
+	SHA256    string `json:"sha256"`
 }
 
 func (s *UploadService) resolveBucket(ctx context.Context, idOrName string, filterID string) (domain.Bucket, error) {
@@ -259,6 +260,7 @@ func (s *UploadService) UploadFile(
 		metaMap[m.Key] = m.Value
 	}
 
+	var sha256Value string
 	for _, f := range input.Files {
 		fileStart := time.Now()
 
@@ -400,6 +402,7 @@ func (s *UploadService) UploadFile(
 
 	return &UploadFileOutput{
 		FileIDs: fileIDs,
+		SHA256: sha256Value,
 		Result: fmt.Sprintf(
 			"Successfully processed %d files",
 			len(input.Files),
