@@ -329,7 +329,7 @@ func (s *UploadService) UploadFile(
 			objectKey,
 		)
 
-		sha256Value := utils.CalculateSHA256Bytes(fileData)
+		sha256Value = utils.CalculateSHA256Bytes(fileData)
 
 		file := domain.File{
 			ID:        generateID(),
