@@ -15,6 +15,7 @@ import (
 
 	"crypto/sha256"
 	"encoding/hex"
+
 	"github.com/google/uuid"
 )
 
@@ -96,14 +97,14 @@ func (s *UploadService) UploadObjectReader(ctx context.Context, bucketID, key st
 
 	// Check if this is a game file and emit stored event
 	log.Printf("[S3] Checking if key %s is a game file...", key)
-	
+
 	// Normalize key (handle leading slash)
 	cleanKey := strings.TrimPrefix(key, "/")
 
 	// Pattern: uploads/games/{game_id}/game.zip (or any extension)
-	isGameFile := strings.HasPrefix(cleanKey, "uploads/games/") && 
+	isGameFile := strings.HasPrefix(cleanKey, "uploads/games/") &&
 		(strings.HasSuffix(cleanKey, ".mp4") || strings.HasSuffix(cleanKey, ".zip"))
-	
+
 	if isGameFile || bucket.Name == "gamelift_games" {
 		log.Printf("[S3] Recognized game-related upload in bucket %s, key %s", bucket.Name, cleanKey)
 		parts := strings.Split(cleanKey, "/")
@@ -111,12 +112,19 @@ func (s *UploadService) UploadObjectReader(ctx context.Context, bucketID, key st
 			gameIDStr := parts[2]
 			var gameID int
 			_, err := fmt.Sscanf(gameIDStr, "%d", &gameID)
-			
+
 			if err == nil && gameID > 0 {
 				// Generate internal download URL for the backend/ec2 (valid for 1 hour)
-				downloadURL := s.presign.GenerateSignedURL(uuid.New().String(),bucket.Name, cleanKey, 	"asset-id",
+				downloadURL, err := s.presign.GenerateSignedURL(uuid.New().String(), bucket.Name, cleanKey, "asset-id",
 					"",
-					"sha256","GET", time.Now().Add(1*time.Hour), &file.ID)
+					"sha256", "GET", time.Now().Add(1*time.Hour), &file.ID)
+				if err != nil {
+					log.Printf("[S3] PRESIGN_DOWNLOAD_URL_GENERATION_FAILED",
+						"error", err,
+					)
+					return fmt.Errorf("PRESIGN_DOWNLOAD_URL_GENERATION_FAILED someoneshould look at this  %w", err)
+
+				}
 
 				event := map[string]interface{}{
 					"game_id":      gameID,
@@ -194,15 +202,8 @@ func (s *UploadService) resolveBucket(ctx context.Context, idOrName string, filt
 		return bucket, nil
 	}
 
-
-
-	
 	return domain.Bucket{}, fmt.Errorf("bucket not found: %s", idOrName)
 }
-
-
-
-
 
 func (s *UploadService) UploadFile(
 	ctx context.Context,
@@ -398,8 +399,8 @@ func (s *UploadService) UploadFile(
 	)
 
 	return &UploadFileOutput{
-		FileIDs:   fileIDs,
-		Result:    fmt.Sprintf(
+		FileIDs: fileIDs,
+		Result: fmt.Sprintf(
 			"Successfully processed %d files",
 			len(input.Files),
 		),
@@ -560,6 +561,7 @@ func (s *UploadService) ListFiles(ctx context.Context, bucketName string) ([]dto
 func IsAdmin(userId string) bool {
 	return userId == "00000000-0000-0000-0000-000000000000"
 }
+
 // isAdmin checks whether the actor (like "user:abc123") is an admin.
 // In MVP mode, we load admin IDs from an env var: ADMIN_USERS=user:abc123,user:def456
 // func IsAdmin(actorID string) bool {
@@ -581,7 +583,6 @@ func IsAdmin(userId string) bool {
 // 	}
 // 	return false
 // }
-
 
 func (s *UploadService) DownloadFile(ctx context.Context, bucketId, fileID string, userID string) ([]byte, *dto.FileInfoOutput, error) {
 	filterID := userID
@@ -605,7 +606,7 @@ func (s *UploadService) DownloadFile(ctx context.Context, bucketId, fileID strin
 		log.Printf("[SERVICE] DownloadFile: system actor — resolving file by ID or key fileID=%s bucketID=%s", fileID, bucket.ID)
 		file, err = s.fileRepo.GetFileByIDOrKey(ctx, fileID, bucket.ID)
 	} else {
-		log.Printf("[SERVICE] DownloadFile: regular actor%s resolving file strictly by ID fileID=%s",userID, fileID)
+		log.Printf("[SERVICE] DownloadFile: regular actor%s resolving file strictly by ID fileID=%s", userID, fileID)
 		file, err = s.fileRepo.GetFileByID(ctx, fileID)
 	}
 
@@ -859,4 +860,3 @@ func (s *UploadService) GetFilesBySHA256(ctx context.Context, sha256 string) ([]
 
 	return output, nil
 }
-

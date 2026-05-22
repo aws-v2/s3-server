@@ -92,7 +92,10 @@ func (s *PresignService) GenerateUploadURL(ctx context.Context, input dto.Genera
 	expiresAt := time.Now().Add(time.Duration(expiresIn) * time.Second)
 
 	// Generate signed URL
-	url := s.GenerateSignedURL(urlID, bucket.Name, input.Key,input.AssetID,input.UserId,input.Sha256, "PUT", expiresAt, nil)
+	url, err := s.GenerateSignedURL(urlID, bucket.Name, input.Key,input.AssetID,input.UserId,input.Sha256, "PUT", expiresAt, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate signed URL: %w", err)
+	}
 
 	// Save presigned URL metadata
 	presignedURL := &domain.PresignedURL{
@@ -127,61 +130,54 @@ func (s *PresignService) GenerateUploadURL(ctx context.Context, input dto.Genera
  
 
 
-
-
 func (s *PresignService) GenerateSignedURL(
-	urlID string,
-	bucketID string,
-	key string,
-	assetID string,
-	userID string,
-	sha256Hash string,
-	method string,
-	expiresAt time.Time,
-fileID *string,
-) string {
+    urlID string,
+    bucketID string,
+    key string,
+    assetID string,
+    userID string,
+    sha256Hash string,
+    method string,
+    expiresAt time.Time,
+    fileID *string,
+) (string, error) {
 
-	payload := map[string]interface{}{
-		"u":   urlID,
-		"b":   bucketID,
-		"k":   key,
-		"a":   assetID,
-		"uid": userID,
-		"sha": sha256Hash,
-		"m":   method,
-		"e":   expiresAt.Unix(),
-	}
+    payload := map[string]interface{}{
+        "u":   urlID,
+        "b":   bucketID,
+        "k":   key,
+        "a":   assetID,
+        "uid": userID,
+        "sha": sha256Hash,
+        "m":   method,
+        "e":   expiresAt.Unix(),
+    }
 
-	payloadJSON, _ := json.Marshal(payload)
+    payloadJSON, _ := json.Marshal(payload)
+    payloadEncoded := base64.RawURLEncoding.EncodeToString(payloadJSON)
+    signature := s.signString(payloadEncoded)
+    token := payloadEncoded + "." + signature
 
-	// Base64URL encode payload
-	payloadEncoded := base64.RawURLEncoding.EncodeToString(payloadJSON)
+    values := url.Values{}
+    values.Set("t", token)
 
-	// Sign ONLY encoded payload
-	signature := s.signString(payloadEncoded)
+    if method == "GET" {
+        if fileID == nil {
+            return "", fmt.Errorf("fileID is required for GET presigned URLs")
+        }
+        return fmt.Sprintf(
+            "/api/v1/s3/files/%s/files/%s/download?%s",
+            bucketID,
+            *fileID,
+            values.Encode(),
+        ), nil
+    }
 
-	// Final token
-	token := payloadEncoded + "." + signature
-
-	values := url.Values{}
-	values.Set("t", token)
-
-
-if method == "GET" {
-	return fmt.Sprintf(
-		"/api/v1/s3/files/%s/files/%s/download?%s",
-		bucketID,
-		*fileID,
-		values.Encode(),
-	)
-}else{
-	return fmt.Sprintf(
-		"/api/v1/s3/files/upload?%s",
-		values.Encode(),
-	)
+    return fmt.Sprintf(
+        "/api/v1/s3/files/upload?%s",
+        values.Encode(),
+    ), nil
 }
-}
-
 
 
 
@@ -229,7 +225,10 @@ func (s *PresignService) GenerateDownloadURL(ctx context.Context, input dto.Gene
 	urlID := uuid.New().String()
 	expiresAt := time.Now().Add(time.Duration(expiresIn) * time.Second)
 
-	url := s.GenerateSignedURL(urlID, bucket.Name, file.Key,input.AssetID,input.UserID,input.Sha256, "GET", expiresAt, &file.ID)
+	url, err := s.GenerateSignedURL(urlID, bucket.Name, file.Key,input.AssetID,input.UserID,input.Sha256, "GET", expiresAt, &file.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate signed URL: %w", err)
+	}
 
 
 

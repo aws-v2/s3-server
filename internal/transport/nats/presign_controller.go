@@ -413,7 +413,7 @@ func (c *PresignController) handleCreatePresignDownloadURL(msg *nats.Msg) {
 	// 2. Generate presigned download URL
 	expiresAt := time.Now().Add(15 * time.Minute)
 
-	url := c.presignService.GenerateSignedURL(
+	url, err := c.presignService.GenerateSignedURL(
 		uuid.New().String(),
 		file.BucketID,
 		file.Key,
@@ -424,6 +424,15 @@ func (c *PresignController) handleCreatePresignDownloadURL(msg *nats.Msg) {
 		expiresAt,
 		&file.ID,
 	)
+	if err != nil {
+		log.Printf("[S3] PRESIGN_DOWNLOAD_URL_GENERATION_FAILED",
+			"user_id", req.UserID,
+			"asset_id", req.AssetID,
+			"correlation_id", req.CorrelationID,
+			"error", err,
+		)
+		return
+	}
 
 	log.Printf("[S3] PRESIGN_DOWNLOAD_URL_GENERATED",
 		"user_id", req.UserID,
@@ -485,9 +494,16 @@ func (c *PresignController) handleGetDownloadURL(msg *nats.Msg) {
 	log.Printf("")
 
 	expiresAt := time.Now().Add(15 * time.Minute)
-	url := c.presignService.GenerateSignedURL(uuid.New().String(),bucketID, key, 	"asset-id",
+	url, err := c.presignService.GenerateSignedURL(uuid.New().String(),bucketID, key, 	"asset-id",
 		req.UserID,
 		"sha256","GET", expiresAt, nil)
+	if err != nil {
+		log.Printf("[S3] PRESIGN_DOWNLOAD_URL_GENERATION_FAILED",
+			"user_id", req.UserID,
+			"error", err,
+		)
+		return
+	}
 
 	log.Printf("[S3] presigned download url %s — bucket=%s key=%s asset_type=%s user=%s with this final url=%s", url,
 		bucketID, key, req.AssetType, req.UserID, req.Key)
@@ -628,11 +644,18 @@ func (c *PresignController) handleGetFileInfo(msg *nats.Msg) {
 		}
 
 		expiresAt := time.Now().Add(15 * time.Minute)
-		downloadURL := c.presignService.GenerateSignedURL(
+		downloadURL, err := c.presignService.GenerateSignedURL(
 			uuid.New().String(), bucketName, f.Key,
 			"asset-id", req.UserID, f.SHA256, "GET", expiresAt,
 			&f.ID,
 		)
+		if err != nil {
+			log.Printf("[S3] PRESIGN_DOWNLOAD_URL_GENERATION_FAILED",
+				"user_id", req.UserID,
+				"error", err,
+			)
+			return
+		}
 
 		response.Files = append(response.Files, fileDetail{
 			FileID:      f.ID,
