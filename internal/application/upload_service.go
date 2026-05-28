@@ -95,7 +95,6 @@ func (s *UploadService) UploadObjectReader(ctx context.Context, bucketID, key st
 		BytesUploaded: size,
 	})
 
-	// Check if this is a game file and emit stored event
 	log.Printf("[S3] Checking if key %s is a game file...", key)
 
 	// Normalize key (handle leading slash)
