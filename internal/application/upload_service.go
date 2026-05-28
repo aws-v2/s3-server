@@ -86,7 +86,7 @@ func (s *UploadService) UploadObjectReader(ctx context.Context, bucketID, key st
 
 	err = s.fileRepo.SaveFile(ctx, file)
 	if err != nil {
-		return fmt.Errorf("failed to save file metadata for %s: %w", key, err)
+		return fmt.Errorf("failed** to save file metadata for %s: %w", key, err)
 	}
 
 	// Emit metrics
