@@ -293,10 +293,11 @@ func (s *UploadService) UploadFile(
 		}
 
 		log.Printf(
-			"[UploadService] saving object request_id=%s object_key=%s bucket=%s",
+			"[UploadService] saving object request_id=%s object_key=%s bucketname=%s ownerID=%s",
 			requestID,
 			objectKey,
-			bucket.StorageName,
+			bucket.Name,
+			bucket.OwnerID,
 		)
 
 		err = s.storage.SaveObject(

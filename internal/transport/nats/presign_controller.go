@@ -94,6 +94,7 @@ const (
 	DefaultGameBucket     = "gameliftgames-default"
 	DefaultTemplateBucket = "templatebucket-default"
 	DefaultAgentBucket    = "agent-binary-system"
+	DefaultAIBucket="scripts"
 	DefaultBuckets        = "libvirt-templates-system,agent-binary-system,system-bucket-1,system-bucket-2,system-bucket-3,system-bucket-4,system-bucket-5"
 )
 	
@@ -153,13 +154,77 @@ func (c *PresignController) Start() error {
 	}
 
 
-
+	defaultBucketSubj := fmt.Sprintf("%s.s3.task.create_default_bucket", c.natsPrefix)
+	_, err = c.conn.Subscribe(defaultBucketSubj, c.handleDefaultBucketSubj)
+	if err != nil {
+		return fmt.Errorf("failed to subscribe to get_file_info: %w", err)
+	}
 
 	log.Printf("[S3] NATS Listener started")
 
 	return nil
 }
-// New handler — correct NATS signature
+
+
+
+type CreateDefaultBucketResponse struct {
+    BucketName string `json:"bucket_name"`
+    Created    bool   `json:"created"`
+    Error      string `json:"error,omitempty"`
+}
+func (c *PresignController) handleDefaultBucketSubj(msg *nats.Msg) {
+	ctx := context.Background()
+
+	var event struct {
+		CorrelationID string `json:"correlation_id"`
+		UserID        string `json:"user_id"`
+		SessionID     string `json:"session_id"`
+		BucketName    string `json:"bucket_name"`
+	}
+
+	if err := json.Unmarshal(msg.Data, &event); err != nil {
+		log.Printf("[S3] failed to parse create_default_bucket payload: %v", err)
+		reply(msg, CreateDefaultBucketResponse{Error: "invalid payload"})
+		return
+	}
+
+	log.Printf("[S3] Ensuring default bucket for tenant: %s bucket: %s", event.UserID, event.BucketName)
+
+	_, err := c.ensureDefaultBucket(ctx, event.BucketName, event.UserID)
+	if err != nil {
+		log.Printf("[S3] Failed to ensure bucket %s: %v", event.BucketName, err)
+		reply(msg, CreateDefaultBucketResponse{
+			BucketName: event.BucketName,
+			Created:    false,
+			Error:      err.Error(),
+		})
+		return
+	}
+
+	log.Printf("[S3] Bucket ready: %s", event.BucketName)
+	reply(msg, CreateDefaultBucketResponse{
+		BucketName: event.BucketName,
+		Created:    true,
+	})
+}
+
+func reply(msg *nats.Msg, v any) {
+	if msg.Reply == "" {
+		return
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		log.Printf("[S3] failed to marshal reply: %v", err)
+		return
+	}
+	if err := msg.Respond(b); err != nil {
+		log.Printf("[S3] failed to send reply: %v", err)
+	}
+}
+
+
+
+
 func (c *PresignController) handleNewUserEvent(msg *nats.Msg) {
 	ctx := context.Background()
 		log.Printf("[S3] failed to parse Newuser created")
@@ -328,6 +393,7 @@ const (
 	AssetTypeGame     AssetType = "game"
 	AssetTypeTemplate AssetType = "template"
 	AssetTypeAgent    AssetType = "agent"
+	AssetTypeScript    AssetType = "script"
 )
 
 type createPresignedURLRequest struct {
@@ -335,12 +401,19 @@ type createPresignedURLRequest struct {
 	GameID    string    `json:"game_id,omitempty"`
 	AssetID   string    `json:"asset_id"`
 	AssetType AssetType `json:"asset_type"` // "game" | "template"
+	AssetName   string    `json:"asset_name"`  // this is the nameof the job/game/render job this asset belongs to like kalshi or ruto tracker
+	BucketName   string    `json:"bucket_name"`  // this is the nameof the job/game/render job this asset belongs to like kalshi or ruto tracker
+	Key       string    `json:"key"`
+
 	Sha256    string    `json:"sha256"`
 }
 
 // TODO: probably fix thisinstead ofcommenting,
 // for gamelift, ai, agents we provide an asset tyep
 // those without asset typebe trated asthe "others"
+
+// TODO: replace the manual fmt for  the key the key and the 
+// bucket name should come from the  service requestiong the bucket
 
 // resolveAssetBucket returns bucket name + object key based on asset type
 func resolveAssetBucket(req createPresignedURLRequest) (name, key string, err error) {
@@ -361,11 +434,10 @@ func resolveAssetBucket(req createPresignedURLRequest) (name, key string, err er
 		return DefaultGameBucket, fmt.Sprintf("uploads/games/%s/game", assetID), nil
 	case AssetTypeAgent:
 		return DefaultAgentBucket, fmt.Sprintf("uploads/agents/%s/agent", assetID), nil
-	// case AssetTypeAI:
-	// 	if ext == "" {
-	// 		ext = ".zip"
-	// 	}
-	// 	return DefaultAIBucket, fmt.Sprintf("uploads/ai/%s/ai%s", assetID, ext), nil
+	case AssetTypeScript:
+	  
+		return req.BucketName ,req.Key, nil
+		
 
 	default:
 		// if there is no asset type then traet it likeits fromnormal users
