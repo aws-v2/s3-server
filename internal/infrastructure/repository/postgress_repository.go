@@ -13,7 +13,7 @@ import (
 
 var (
 	// ErrNotFound is returned when a record is not found
-	ErrNotFound = errors.New("record not found")
+	ErrNotFound = errors.New("record not found*")
 	// ErrDuplicate is returned when a unique constraint is violated
 	ErrDuplicate = errors.New("duplicate record")
 )

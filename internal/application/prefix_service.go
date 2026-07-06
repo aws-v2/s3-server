@@ -4,7 +4,12 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io"
+	"log"
+	"mime/multipart"
 	"s3/internal/domain"
 	"s3/internal/infrastructure/dto"
 	"s3/internal/infrastructure/metrics"
@@ -254,29 +259,56 @@ func (s *PrefixService) CountByPrefix(ctx context.Context, input dto.CountByPref
 	}, nil
 }
 
+
+func sha256File(file multipart.File) (string, error) {
+	h := sha256.New()
+	if _, err := io.Copy(h, file); err != nil {
+		return "", fmt.Errorf("hash file: %w", err)
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
 // ArchiveByPrefix archives files by prefix
 func (s *PrefixService) ArchiveByPrefix(ctx context.Context, input dto.ArchiveByPrefixInput) (*dto.ArchiveByPrefixOutput, error) {
-	actor, _ := ctx.Value("actor").(domain.Actor)
-	filterID := actor.ID
-	if IsAdmin(actor.ID) {
+	
+	
+	
+	
+	filterID := input.UserID
+	if IsAdmin(filterID) {
 		filterID = ""
 	}
+
+
+
+
+
+
+	log.Printf("The bucket with the id %s",input.BucketID)
+	log.Printf("The bucket with the filterID id %s",filterID)
 
 	bucket, err := s.bucketRepo.GetBucketByID(ctx, input.BucketID, filterID)
 	if err != nil {
 		return nil, fmt.Errorf("bucket not found: %w", err)
 	}
+	log.Printf("The bucket has been found  id %s",bucket.ID)
+	log.Printf("The prefix has been found  id %s",input.Prefix)
+
 
 	files, err := s.fileRepo.ListFilesByPrefix(ctx, input.BucketID, input.Prefix, 0)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list files: %w", err)
 	}
+	log.Printf("The fiels has been found  id %d",len(files))
 
 	if len(files) == 0 {
 		return nil, fmt.Errorf("no files found with prefix: %s", input.Prefix)
 	}
+	log.Printf("The fiels has *been found  id %d",len(files))
+
 
 	format := input.Format
+	checksum:=""
 	if format == "" {
 		format = "zip"
 	}
@@ -286,10 +318,11 @@ func (s *PrefixService) ArchiveByPrefix(ctx context.Context, input dto.ArchiveBy
 
 	switch format {
 	case "zip":
-		archiveData, archiveErr = s.createZipArchive(ctx, bucket.StorageName, files)
+		archiveData, checksum,archiveErr = s.createZipArchive(ctx, bucket.StorageName, files)
 	default:
 		return nil, fmt.Errorf("unsupported archive format: %s", format)
 	}
+
 
 	if archiveErr != nil {
 		return nil, fmt.Errorf("failed to create archive: %w", archiveErr)
@@ -310,7 +343,8 @@ func (s *PrefixService) ArchiveByPrefix(ctx context.Context, input dto.ArchiveBy
 	archiveFile := domain.File{
 		ID:          uuid.New().String(),
 		BucketID:    input.BucketID,
-		Key:         archiveKey,
+		SHA256: checksum,
+		Key:         input.Prefix,
 		Size:        int64(len(archiveData)),
 		ContentType: "application/zip",
 		Metadata: map[string]string{
@@ -335,16 +369,16 @@ func (s *PrefixService) ArchiveByPrefix(ctx context.Context, input dto.ArchiveBy
 		ArchiveKey:  archiveKey,
 		FileCount:   len(files),
 		ArchiveSize: int64(len(archiveData)),
+		Checksum:checksum,
+		FileID:archiveFile.ID,
 	}, nil
 }
 
-func (s *PrefixService) createZipArchive(ctx context.Context, bucketName string, files []domain.File) ([]byte, error) {
+func (s *PrefixService) createZipArchive(ctx context.Context, bucketName string, files []domain.File) ([]byte, string, error) {
 	buf := new(bytes.Buffer)
 	zipWriter := zip.NewWriter(buf)
 
 	for _, file := range files {
-		// Note: This logic seems to download data to create a zip.
-		// It should also use StorageName.
 		data, err := s.storage.GetObject(ctx, bucketName, file.Key)
 		if err != nil {
 			continue
@@ -361,11 +395,22 @@ func (s *PrefixService) createZipArchive(ctx context.Context, bucketName string,
 	}
 
 	if err := zipWriter.Close(); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
-	return buf.Bytes(), nil
+	zipBytes := buf.Bytes()
+
+	// SHA256 of the final zip
+	h := sha256.New()
+	if _, err := io.Copy(h, bytes.NewReader(zipBytes)); err != nil {
+		return nil, "", fmt.Errorf("hash archive: %w", err)
+	}
+	checksum := hex.EncodeToString(h.Sum(nil))
+
+	return zipBytes, checksum, nil
 }
+
+
 
 func (s *PrefixService) emitMetrics(ctx context.Context, bucketID, ownerID, region string, partial dto.S3IngestRequest) {
 	if s.metrics == nil {

@@ -122,6 +122,8 @@ func registerObjectRoutes(v1 *gin.RouterGroup, handler *HandlerForFiles) {
 		object.GET("/:bucketId/files/:fileId", handler.GetFileInfo)
 
 		// // Download file
+		// TODO: Get files for thewhole bucket, 
+		// Get files froma whole folder
 		object.GET("/:bucketId/files/:fileId/download", handler.DownloadFile)
 
 		// Delete file

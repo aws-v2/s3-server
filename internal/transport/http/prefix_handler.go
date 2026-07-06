@@ -128,13 +128,14 @@ func (h *PrefixHandler) CountByPrefix(c *gin.Context) {
 // POST /prefix/:bucketId/archive
 func (h *PrefixHandler) ArchiveByPrefix(c *gin.Context) {
 	bucketId := c.Param("bucketId")
-
+userID :=c.GetString("requestId")
 	var input dto.ArchiveByPrefixInput
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON payload"})
 		return
 	}
 	input.BucketID = bucketId
+	input.UserID=userID
 
 	output, err := h.prefixService.ArchiveByPrefix(c.Request.Context(), input)
 	if err != nil {

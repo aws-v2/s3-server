@@ -58,18 +58,19 @@ type fileDetail struct {
 type PresignController struct {
 	conn           *nats.Conn
 	presignService *application.PresignService
+	prefixService  *application.PrefixService
 	bucketService  *application.BucketService
 	userRepo       domain.UserRepository
 	natsPrefix     string
 	defaultBuckets []string
-	secretKey     string
-	fileRepo domain.FileRepository
-
+	secretKey      string
+	fileRepo       domain.FileRepository
 }
 
 func NewPresignController(
 	conn *nats.Conn,
 	presignService *application.PresignService,
+	prefixService *application.PrefixService,
 	bucketService *application.BucketService,
 	userRepo domain.UserRepository,
 	natsPrefix string,
@@ -84,8 +85,9 @@ func NewPresignController(
 		userRepo:       userRepo,
 		natsPrefix:     natsPrefix,
 		defaultBuckets: defaultBuckets,
-		secretKey:     secretKey,
-		fileRepo: fileRepo,
+		secretKey:      secretKey,
+		fileRepo:       fileRepo,
+		prefixService:  prefixService,
 	}
 }
 
@@ -94,15 +96,16 @@ const (
 	DefaultGameBucket     = "gameliftgames-default"
 	DefaultTemplateBucket = "templatebucket-default"
 	DefaultAgentBucket    = "agent-binary-system"
-	DefaultAIBucket="scripts"
+	DefaultAIBucket       = "scripts"
 	DefaultBuckets        = "libvirt-templates-system,agent-binary-system,system-bucket-1,system-bucket-2,system-bucket-3,system-bucket-4,system-bucket-5"
 )
-	
+
 type createPresignDownloadURLRequest struct {
 	UserID        string `json:"user_id"`
 	CorrelationID string `json:"correlation_id"`
 	FileSha256    string `json:"sha256"`
-	AssetID    string `json:"asset_id"`
+	AssetID       string `json:"asset_id"`
+	FileCount     int    `json:"file_count"`
 }
 
 type createPresignDownloadURLResponse struct {
@@ -144,18 +147,20 @@ func (c *PresignController) Start() error {
 		return fmt.Errorf("failed to subscribe to get_file_info: %w", err)
 	}
 
-
-
-
 	newUserSubj := fmt.Sprintf("%s.user.registered", c.natsPrefix)
 	_, err = c.conn.Subscribe(newUserSubj, c.handleNewUserEvent)
 	if err != nil {
 		return fmt.Errorf("failed to subscribe to get_file_info: %w", err)
 	}
 
-
 	defaultBucketSubj := fmt.Sprintf("%s.s3.task.create_default_bucket", c.natsPrefix)
 	_, err = c.conn.Subscribe(defaultBucketSubj, c.handleDefaultBucketSubj)
+	if err != nil {
+		return fmt.Errorf("failed to subscribe to get_file_info: %w", err)
+	}
+
+	getZipFileSubj := fmt.Sprintf("%s.s3.task.create_zip_download_url", c.natsPrefix)
+	_, err = c.conn.Subscribe(getZipFileSubj, c.handleCreateZip)
 	if err != nil {
 		return fmt.Errorf("failed to subscribe to get_file_info: %w", err)
 	}
@@ -165,13 +170,89 @@ func (c *PresignController) Start() error {
 	return nil
 }
 
-
-
 type CreateDefaultBucketResponse struct {
-    BucketName string `json:"bucket_name"`
-    Created    bool   `json:"created"`
-    Error      string `json:"error,omitempty"`
+	BucketName string `json:"bucket_name"`
+	BucketID   string `json:"bucket_id"`
+	Created    bool   `json:"created"`
+	Error      string `json:"error,omitempty"`
 }
+
+type ArchiveByPrefixUrl struct {
+	BucketID string `json:"bucket_id"`
+	URL      string `json:"url"`
+
+	FileCount int `json:"file_count"` // zip or tar
+}
+
+func (c *PresignController) handleCreateZip(msg *nats.Msg) {
+	ctx := context.Background()
+
+	var event dto.ArchiveByPrefixInput
+
+	if err := json.Unmarshal(msg.Data, &event); err != nil {
+		log.Printf("[S3] failed to parse create_zip_download_url payload: %v", err)
+		reply(msg, CreateDefaultBucketResponse{Error: "invalid payload"})
+		return
+	}
+	// ensure the bucket exists,
+	bucket, err := c.bucketService.GetBucketByID(ctx, event.BucketID)
+
+	if err != nil {
+		log.Printf("[S3] Failed to craete archive %s, for bucket id: %s", err, event.BucketID)
+		reply(msg, CreateDefaultBucketResponse{
+			Created: false,
+			Error:   err.Error(),
+		})
+		return
+	}
+	log.Printf("The bucket with the *name %s", event.UserID)
+
+	log.Printf("The bucket with the name %s", bucket.Name)
+
+	archiveOutput, err := c.prefixService.ArchiveByPrefix(ctx, event)
+	if err != nil {
+		log.Printf("[S3] failed to create archive: %v", err)
+		reply(msg, CreateDefaultBucketResponse{Created: false, Error: err.Error()})
+		return
+	}
+
+	// Generate presigned download URL for the archive
+	expiresAt := time.Now().Add(15 * time.Minute)
+	presignURL, err := c.presignService.GenerateSignedURL(
+		uuid.New().String(),      // token ID
+		event.BucketID,           // bucket
+		archiveOutput.ArchiveKey, // key (the .zip file key)
+		archiveOutput.FileID,     // asset ID
+		event.UserID,             // user
+		archiveOutput.Checksum,   // sha256
+		"GET",
+		expiresAt,
+		&archiveOutput.FileID,
+	)
+	if err != nil {
+		log.Printf("[S3] failed to generate presign URL for archive: %v", err)
+		reply(msg, CreateDefaultBucketResponse{Created: false, Error: err.Error()})
+		return
+	}
+
+	log.Printf("[S3] Archive created, presign URL: %s", presignURL)
+
+	reply(msg, ArchiveByPrefixUrl{
+		BucketID:  event.BucketID,
+		FileCount: archiveOutput.FileCount,
+		URL:       presignURL,
+	})
+
+	// log.Printf("[S3] Archive created %s...", archiveOutput.Checksum)
+
+	// log.Printf("[S3] Bucket ready: %s", event.BucketName)
+	// reply(msg, ArchiveByPrefixUrl{
+	// 	BucketID:   id,
+	// 	BucketName: event.BucketName,
+	// 	Created:    true,
+	// })
+}
+
 func (c *PresignController) handleDefaultBucketSubj(msg *nats.Msg) {
 	ctx := context.Background()
 
@@ -190,7 +271,7 @@ func (c *PresignController) handleDefaultBucketSubj(msg *nats.Msg) {
 
 	log.Printf("[S3] Ensuring default bucket for tenant: %s bucket: %s", event.UserID, event.BucketName)
 
-	_, err := c.ensureDefaultBucket(ctx, event.BucketName, event.UserID)
+	id, err := c.ensureDefaultBucket(ctx, event.BucketName, event.UserID)
 	if err != nil {
 		log.Printf("[S3] Failed to ensure bucket %s: %v", event.BucketName, err)
 		reply(msg, CreateDefaultBucketResponse{
@@ -203,6 +284,7 @@ func (c *PresignController) handleDefaultBucketSubj(msg *nats.Msg) {
 
 	log.Printf("[S3] Bucket ready: %s", event.BucketName)
 	reply(msg, CreateDefaultBucketResponse{
+		BucketID:   id,
 		BucketName: event.BucketName,
 		Created:    true,
 	})
@@ -222,12 +304,9 @@ func reply(msg *nats.Msg, v any) {
 	}
 }
 
-
-
-
 func (c *PresignController) handleNewUserEvent(msg *nats.Msg) {
 	ctx := context.Background()
-		log.Printf("[S3] failed to parse Newuser created")
+	log.Printf("[S3] failed to parse Newuser created")
 
 	// parse the event payload
 	var event struct {
@@ -241,13 +320,13 @@ func (c *PresignController) handleNewUserEvent(msg *nats.Msg) {
 	defaultBuckets := []string{
 		"gameliftgames-defualt",
 		"aibucket-defualt",
-	//     "libvirt-templates-system",
-	//     "agent-binary-system",
-	//     "system-bucket-1",
-	//     "system-bucket-2",
-	//     "system-bucket-3",
-	//     "system-bucket-4",
-	//     "system-bucket-5",
+		//     "libvirt-templates-system",
+		//     "agent-binary-system",
+		//     "system-bucket-1",
+		//     "system-bucket-2",
+		//     "system-bucket-3",
+		//     "system-bucket-4",
+		//     "system-bucket-5",
 	}
 
 	log.Printf("[S3] Ensuring default buckets for tenant: %s", event.TenantID)
@@ -261,7 +340,6 @@ func (c *PresignController) handleNewUserEvent(msg *nats.Msg) {
 		}
 	}
 }
-
 
 // New handler — correct NATS signature
 func (c *PresignController) handleSystemUserCreated(msg *nats.Msg) {
@@ -328,10 +406,7 @@ func (c *PresignController) handleCreatePresignedURL(msg *nats.Msg) {
 
 	log.Printf("[S3] Presigned URL requested — AssetType: %s, AssetID: %s, User: %s", req.AssetType, req.AssetID, req.UserID)
 
-
-// create a url for this files with a sha256,fromthis user id, and this is its assetid,
-
-
+	// create a url for this files with a sha256,fromthis user id, and this is its assetid,
 
 	ctx := context.Background()
 	ctx = context.WithValue(ctx, "actor", domain.Actor{ID: req.UserID})
@@ -367,9 +442,9 @@ func (c *PresignController) handleCreatePresignedURL(msg *nats.Msg) {
 	output, err := c.presignService.GenerateUploadURL(ctx, dto.GenerateUploadURLInput{
 		BucketID:  bucketID,
 		AssetType: string(req.AssetType),
-		UserId: req.UserID,
-		Sha256: req.Sha256,
-		AssetID: req.AssetID,
+		UserId:    req.UserID,
+		Sha256:    req.Sha256,
+		AssetID:   req.AssetID,
 		Key:       key, // instead of the key it shouldbe the file id
 		ExpiresIn: 900,
 	})
@@ -393,26 +468,26 @@ const (
 	AssetTypeGame     AssetType = "game"
 	AssetTypeTemplate AssetType = "template"
 	AssetTypeAgent    AssetType = "agent"
-	AssetTypeScript    AssetType = "script"
+	AssetTypeScript   AssetType = "script"
 )
 
 type createPresignedURLRequest struct {
-	UserID    string    `json:"user_id"`
-	GameID    string    `json:"game_id,omitempty"`
-	AssetID   string    `json:"asset_id"`
-	AssetType AssetType `json:"asset_type"` // "game" | "template"
-	AssetName   string    `json:"asset_name"`  // this is the nameof the job/game/render job this asset belongs to like kalshi or ruto tracker
-	BucketName   string    `json:"bucket_name"`  // this is the nameof the job/game/render job this asset belongs to like kalshi or ruto tracker
-	Key       string    `json:"key"`
+	UserID     string    `json:"user_id"`
+	GameID     string    `json:"game_id,omitempty"`
+	AssetID    string    `json:"asset_id"`
+	AssetType  AssetType `json:"asset_type"`  // "game" | "template"
+	AssetName  string    `json:"asset_name"`  // this is the nameof the job/game/render job this asset belongs to like kalshi or ruto tracker
+	BucketName string    `json:"bucket_name"` // this is the nameof the job/game/render job this asset belongs to like kalshi or ruto tracker
+	Key        string    `json:"key"`
 
-	Sha256    string    `json:"sha256"`
+	Sha256 string `json:"sha256"`
 }
 
 // TODO: probably fix thisinstead ofcommenting,
 // for gamelift, ai, agents we provide an asset tyep
 // those without asset typebe trated asthe "others"
 
-// TODO: replace the manual fmt for  the key the key and the 
+// TODO: replace the manual fmt for  the key the key and the
 // bucket name should come from the  service requestiong the bucket
 
 // resolveAssetBucket returns bucket name + object key based on asset type
@@ -435,9 +510,8 @@ func resolveAssetBucket(req createPresignedURLRequest) (name, key string, err er
 	case AssetTypeAgent:
 		return DefaultAgentBucket, fmt.Sprintf("uploads/agents/%s/agent", assetID), nil
 	case AssetTypeScript:
-	  
-		return req.BucketName ,req.Key, nil
-		
+
+		return req.BucketName, req.Key, nil
 
 	default:
 		// if there is no asset type then traet it likeits fromnormal users
@@ -539,7 +613,6 @@ func (c *PresignController) handleCreatePresignDownloadURL(msg *nats.Msg) {
 
 	log.Printf("[S3] PRESIGN_DOWNLOAD_SUCCESS user_id %s asset_id %s correlation_id %s file_id %s sha %s", req.UserID, req.AssetID, req.CorrelationID, file.ID, file.SHA256)
 }
- 
 
 // here
 func (c *PresignController) handleGetDownloadURL(msg *nats.Msg) {
@@ -566,9 +639,9 @@ func (c *PresignController) handleGetDownloadURL(msg *nats.Msg) {
 	log.Printf("")
 
 	expiresAt := time.Now().Add(15 * time.Minute)
-	url, err := c.presignService.GenerateSignedURL(uuid.New().String(),bucketID, key, 	"asset-id",
+	url, err := c.presignService.GenerateSignedURL(uuid.New().String(), bucketID, key, "asset-id",
 		req.UserID,
-		"sha256","GET", expiresAt, nil)
+		"sha256", "GET", expiresAt, nil)
 	if err != nil {
 		log.Printf("[S3] PRESIGN_DOWNLOAD_URL_GENERATION_FAILED",
 			"user_id", req.UserID,

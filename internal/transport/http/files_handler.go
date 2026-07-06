@@ -270,6 +270,7 @@ func (h *HandlerForFiles) UploadFilePresign(c *gin.Context) {
 		ExpiresAt int64  `json:"e"`
 	}
 
+	
 	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
 		log.Printf("[UploadFilePresign] failed to unmarshal payload request_id=%s error=%v", requestID, err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid token payload"})

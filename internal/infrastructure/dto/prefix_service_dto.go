@@ -66,16 +66,22 @@ type CountByPrefixOutput struct {
 }
 
 type ArchiveByPrefixInput struct {
-	BucketID    string `json:"-"`
+	BucketID    string `json:"bucket_id"`
 	Prefix      string `json:"prefix" binding:"required"`
 	ArchiveName string `json:"archive_name" binding:"required"`
 	Format      string `json:"format"` // zip or tar
+	UserID  string `json:"user_id"`
+	CorrelationID string `json:"correlation_id"`
+
+
 }
 
 type ArchiveByPrefixOutput struct {
 	ArchiveKey  string `json:"archive_key"`
 	FileCount   int    `json:"file_count"`
+	FileID string  `json:"file_id"`
 	ArchiveSize int64  `json:"archive_size"`
+	Checksum string  `json:"checksum"`
 }
 
 type SetMetadataByPrefixInput struct {
