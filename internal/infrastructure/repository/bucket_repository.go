@@ -206,7 +206,7 @@ func (r *PostgresRepository) IncrementPolicyVersionAndUpdateBucket(ctx context.C
 }
 
 func (r *PostgresRepository) GetBucketByName(ctx context.Context, name string, ownerID string) (domain.Bucket, error) {
-	query := `SELECT id, name, owner_id, arn, region, bucket_type, object_ownership, created_at, updated_at, policy, cors, replication, notifications, logging, storage_name FROM buckets WHERE name = $1 AND ($2 = '' OR owner_id = $2)`
+	query := `SELECT id, name, owner_id, arn, region, bucket_type, object_ownership, created_at, updated_at, policy, cors, replication, notifications, logging, storage_name, storage_host_id FROM buckets WHERE name = $1 AND ($2 = '' OR owner_id = $2)`
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
@@ -229,6 +229,7 @@ func (r *PostgresRepository) GetBucketByName(ctx context.Context, name string, o
 		&notifJSON,
 		&loggingJSON,
 		&bucket.StorageName,
+		&bucket.StorageHostID,
 	)
 
 	if err != nil {
@@ -262,6 +263,69 @@ func (r *PostgresRepository) GetBucketByName(ctx context.Context, name string, o
 		}
 	}
 
+	if len(loggingJSON) > 0 {
+		if err := json.Unmarshal(loggingJSON, &bucket.Logging); err != nil {
+			return domain.Bucket{}, fmt.Errorf("failed to unmarshal logging: %w", err)
+		}
+	}
+
+	return bucket, nil
+}
+
+func (r *PostgresRepository) GetBucketByStorageName(ctx context.Context, storageName string) (domain.Bucket, error) {
+	query := `SELECT id, name, owner_id, arn, region, bucket_type, object_ownership, created_at, updated_at, policy, cors, replication, notifications, logging, storage_name, storage_host_id FROM buckets WHERE storage_name = $1`
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	var bucket domain.Bucket
+	var policyJSON, corsJSON, replJSON, notifJSON, loggingJSON []byte
+
+	err := r.db.QueryRowContext(ctx, query, storageName).Scan(
+		&bucket.ID,
+		&bucket.Name,
+		&bucket.OwnerID,
+		&bucket.ARN,
+		&bucket.Region,
+		&bucket.BucketType,
+		&bucket.ObjectOwnership,
+		&bucket.CreatedAt,
+		&bucket.UpdatedAt,
+		&policyJSON,
+		&corsJSON,
+		&replJSON,
+		&notifJSON,
+		&loggingJSON,
+		&bucket.StorageName,
+		&bucket.StorageHostID,
+	)
+
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.Bucket{}, ErrNotFound
+		}
+		return domain.Bucket{}, fmt.Errorf("failed to get bucket: %w", err)
+	}
+
+	if len(policyJSON) > 0 {
+		if err := json.Unmarshal(policyJSON, &bucket.Policy); err != nil {
+			return domain.Bucket{}, fmt.Errorf("failed to unmarshal policy: %w", err)
+		}
+	}
+	if len(corsJSON) > 0 {
+		if err := json.Unmarshal(corsJSON, &bucket.CORS); err != nil {
+			return domain.Bucket{}, fmt.Errorf("failed to unmarshal cors: %w", err)
+		}
+	}
+	if len(replJSON) > 0 {
+		if err := json.Unmarshal(replJSON, &bucket.Replication); err != nil {
+			return domain.Bucket{}, fmt.Errorf("failed to unmarshal replication: %w", err)
+		}
+	}
+	if len(notifJSON) > 0 {
+		if err := json.Unmarshal(notifJSON, &bucket.Notifications); err != nil {
+			return domain.Bucket{}, fmt.Errorf("failed to unmarshal notifications: %w", err)
+		}
+	}
 	if len(loggingJSON) > 0 {
 		if err := json.Unmarshal(loggingJSON, &bucket.Logging); err != nil {
 			return domain.Bucket{}, fmt.Errorf("failed to unmarshal logging: %w", err)
@@ -554,10 +618,10 @@ func (r *PostgresRepository) SaveBucket(ctx context.Context, bucket *domain.Buck
 		INSERT INTO buckets (
 			id, name, owner_id, region, bucket_type, object_ownership, 
 			block_public_access, versioning_status, tags, encryption, 
-			object_lock, arn, storage_name, cors, replication, notifications, logging, created_at, updated_at
+			object_lock, arn, storage_name, storage_host_id, cors, replication, notifications, logging, created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
-		RETURNING id, name, owner_id, arn, storage_name, created_at, updated_at
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+		RETURNING id, name, owner_id, arn, storage_name, storage_host_id, created_at, updated_at
 	`
 
 	var result domain.Bucket
@@ -603,6 +667,7 @@ func (r *PostgresRepository) SaveBucket(ctx context.Context, bucket *domain.Buck
 		bucket.ObjectLock,
 		bucket.ARN,
 		bucket.StorageName,
+		bucket.StorageHostID,
 		corsJSON,
 		replJSON,
 		notifJSON,
@@ -615,6 +680,7 @@ func (r *PostgresRepository) SaveBucket(ctx context.Context, bucket *domain.Buck
 		&result.OwnerID,
 		&result.ARN,
 		&result.StorageName,
+		&result.StorageHostID,
 		&result.CreatedAt,
 		&result.UpdatedAt,
 	)
@@ -632,7 +698,7 @@ func (r *PostgresRepository) SaveBucket(ctx context.Context, bucket *domain.Buck
 // ListBuckets retrieves all buckets
 func (r *PostgresRepository) ListBucketsByOwner(ctx context.Context, ownerID string) ([]domain.Bucket, error) {
 	query := `SELECT id, name, owner_id, region, bucket_type, object_ownership, block_public_access, 
-	          versioning_status, tags, encryption, object_lock, created_at, updated_at, storage_name, policy, notifications, logging 
+	          versioning_status, tags, encryption, object_lock, created_at, updated_at, storage_name, storage_host_id, policy, notifications, logging 
 	          FROM buckets WHERE owner_id = $1`
 	rows, err := r.db.QueryContext(ctx, query, ownerID)
 	if err != nil {
@@ -646,7 +712,7 @@ func (r *PostgresRepository) ListBucketsByOwner(ctx context.Context, ownerID str
 		var blockJSON, tagsJSON, encJSON, policyJSON, notifJSON, loggingJSON []byte
 		err := rows.Scan(
 			&b.ID, &b.Name, &b.OwnerID, &b.Region, &b.BucketType, &b.ObjectOwnership, &blockJSON,
-			&b.VersioningStatus, &tagsJSON, &encJSON, &b.ObjectLock, &b.CreatedAt, &b.UpdatedAt, &b.StorageName, &policyJSON, &notifJSON, &loggingJSON,
+			&b.VersioningStatus, &tagsJSON, &encJSON, &b.ObjectLock, &b.CreatedAt, &b.UpdatedAt, &b.StorageName, &b.StorageHostID, &policyJSON, &notifJSON, &loggingJSON,
 		)
 		if err != nil {
 			return nil, err
@@ -681,7 +747,7 @@ func (r *PostgresRepository) ListBuckets(ctx context.Context, ownerID string) ([
 	defer cancel()
 
 	query := `
-	SELECT id, name, owner_id, created_at, updated_at, region, bucket_type, storage_name, arn, replication, notifications, logging
+	SELECT id, name, owner_id, created_at, updated_at, region, bucket_type, storage_name, storage_host_id, arn, replication, notifications, logging
 	FROM buckets
 	WHERE ($1 = '' OR owner_id = $1)
 	ORDER BY created_at DESC
@@ -706,6 +772,7 @@ func (r *PostgresRepository) ListBuckets(ctx context.Context, ownerID string) ([
 			&bucket.Region,
 			&bucket.BucketType,
 			&bucket.StorageName,
+			&bucket.StorageHostID,
 			&bucket.ARN,
 			&replJSON,
 			&notifJSON,
@@ -745,7 +812,7 @@ func (r *PostgresRepository) ListBuckets(ctx context.Context, ownerID string) ([
 }
 
 func (r *PostgresRepository) GetBucketByID(ctx context.Context, bucketID string, ownerID string) (domain.Bucket, error) {
-	query := `SELECT id, name, owner_id, arn, region, bucket_type, object_ownership, created_at, updated_at, policy, cors, replication, notifications, logging, storage_name FROM buckets WHERE id = $1 AND ($2 = '' OR owner_id = $2)`
+	query := `SELECT id, name, owner_id, arn, region, bucket_type, object_ownership, created_at, updated_at, policy, cors, replication, notifications, logging, storage_name, storage_host_id FROM buckets WHERE id = $1 AND ($2 = '' OR owner_id = $2)`
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
@@ -768,6 +835,7 @@ func (r *PostgresRepository) GetBucketByID(ctx context.Context, bucketID string,
 		&notifJSON,
 		&loggingJSON,
 		&bucket.StorageName,
+		&bucket.StorageHostID,
 	)
 
 	if err != nil {

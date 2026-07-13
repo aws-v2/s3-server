@@ -15,7 +15,7 @@ type StoragePort interface {
 	SaveObjectReader(ctx context.Context, bucket, key string, reader io.Reader, size int64, metadata map[string]string) error
 	GetObject(ctx context.Context, bucket, key string) ([]byte, error)
 	DeleteObject(ctx context.Context, bucket, key string) error
-	CreateBucket(ctx context.Context, name string) (string, error)
+	CreateBucket(ctx context.Context, name string) (string, string, error)
 	DeleteBucket(ctx context.Context, bucketId string) error
 
 	SetBucketVersioning(ctx context.Context, name string, enabled bool) error
@@ -30,6 +30,26 @@ type StoragePort interface {
 	) error
 	GetBucketVersioning(ctx context.Context, bucketId string) (*VersioningOutput, error)
 	EmptyBucket(ctx context.Context, bucketName string) error
+}
+
+type VMActionTarget struct {
+	VMID   string
+	HostIP string
+	Action string // "sleep" or "terminate"
+}
+type MetricsRepository interface {
+	Insert(ctx context.Context, hostID string, metric DomainStats) error
+	GetVMsRequiringAction(ctx context.Context, sleepDuration, terminateDuration time.Duration) ([]VMActionTarget, error)
+}
+
+type HostRepository interface {
+	UpsertHost(ctx context.Context, host *Host) error
+	GetHostByID(ctx context.Context, hostID string) (*Host, error)
+	ListHostsByType(ctx context.Context, hostType string) ([]Host, error)
+}
+
+type HostScheduler interface {
+	SelectHost(ctx context.Context, hostType string) (*Host, error)
 }
 
 type FileRepository interface {
@@ -51,6 +71,7 @@ type BucketRepository interface {
 	SaveBucket(ctx context.Context, bucket *Bucket) (Bucket, error)
 	GetBucketByID(ctx context.Context, bucketId string, ownerID string) (Bucket, error)
 	GetBucketByName(ctx context.Context, name string, ownerID string) (Bucket, error)
+	GetBucketByStorageName(ctx context.Context, storageName string) (Bucket, error)
 	ListBuckets(ctx context.Context, ownerID string) ([]Bucket, error)
 	UpdateBucket(ctx context.Context, bucket *Bucket, ownerID string) (*Bucket, error)
 	DeleteBucket(ctx context.Context, bucketId string) error

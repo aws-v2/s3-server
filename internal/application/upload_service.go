@@ -521,9 +521,10 @@ func (s *UploadService) GetFileInfo(ctx context.Context, bucketID, fileID string
 }
 
 func (s *UploadService) ListFiles(ctx context.Context, bucketName string) ([]dto.FileInfoOutput, error) {
-	actor, _ := ctx.Value("actor").(domain.Actor)
-	filterID := actor.ID
-	if IsAdmin(actor.ID) {
+	actor := ctx.Value("userId")
+	filterID := fmt.Sprintf("%v", actor)
+	log.Printf("Updated filter id code: %s", filterID)
+	if IsAdmin(filterID) {
 		filterID = ""
 	}
 

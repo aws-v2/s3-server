@@ -17,6 +17,7 @@ type Bucket struct {
 	CreatedAt         time.Time          `json:"created_at"`
 	UpdatedAt         time.Time          `json:"updated_at"`
 	StorageName       string             `json:"storage_name"`
+	StorageHostID     string             `json:"storage_host_id"`
 	Policy            *Policy            `json:"policy,omitempty"`
 	CORS              *CORSConfiguration `json:"cors,omitempty"`
 	Replication       interface{}        `json:"replication,omitempty"`

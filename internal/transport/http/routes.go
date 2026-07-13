@@ -13,6 +13,7 @@ type Handlers struct {
 	Bucket       *BucketHandler
 	Health       *HandlerForHealth
 	Presign      *PresignHandler
+	Metrics      *MetricsHandler
 	Batch        *BatchHandler
 	Prefix       *PrefixHandler
 	Search       *SearchHandler
@@ -51,21 +52,31 @@ func RegisterRoutes(router *gin.Engine, handlers *Handlers) {
 	registerBatchRoutes(v1, handlers.Batch)
 	registerSearchRoutes(v1, handlers.Search)
 	registerPrefixRoutes(v1, handlers.Prefix)
+	registerMetricsRoutes(v1, handlers.Metrics)
 	registerSecurityRoutes(v1, handlers.Security)
-
 	registerDocsRoutes(v1, handlers)
 
 }
+// registerPrefixRoutes registers prefix-based operation routes
+func registerMetricsRoutes(v1 *gin.RouterGroup, handler *MetricsHandler) {
+	metrics := v1.Group("/metrics")
+	{
 
+		// Set metadata for files by prefix
+		metrics.POST("/hosts/heartbeat", handler.HandleHeartbeat)
+	}
+}
 // registerHealthRoutes registers all health check routes
 func registerHealthRoutes(v1 *gin.RouterGroup, handler *HandlerForHealth) {
 
-	health := v1.Group("/health")
+	health := v1.Group("/health")  
 	{
 		health.GET("/ping", handler.Ping)
 		health.GET("/status", handler.GetDetailedStatus)
 		health.GET("/metrics", handler.GetMetrics)
+
 	}
+	
 }
 func registerDocsRoutes(v1 *gin.RouterGroup, handlers *Handlers) {
 	docs := v1.Group("/docs")

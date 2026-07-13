@@ -65,7 +65,7 @@ func (s *BucketService) CreateBucket(ctx context.Context, input dto.CreateBucket
 	storageName := fmt.Sprintf("bucket-%s", strings.ReplaceAll(bucketId, "-", ""))
 
 	// Try to create physical bucket in storage (MinIO)
-	_, err = s.storage.CreateBucket(ctx, storageName)
+	_, storageHostID, err := s.storage.CreateBucket(ctx, storageName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create physical bucket: %w", err)
 	}
@@ -112,6 +112,7 @@ log.Printf("DEBUG: OwnerId=%q, BucketName=%q", input.OwnerId, input.Name)
 		},
 		ObjectLock:  input.ObjectLock,
 		StorageName: storageName,
+		StorageHostID: storageHostID,
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
 	}

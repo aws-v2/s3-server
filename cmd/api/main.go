@@ -175,23 +175,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := network.CheckReachability(cfg.S3.Host, cfg.S3.Port, 5, 2*time.Second); err != nil {
-		slog.Error("FATAL: MinIO unreachable", slog.Any("error", err), slog.String("host", cfg.S3.Host), slog.Int("port", cfg.S3.Port))
-		os.Exit(1)
-	}
-
-	slog.Info("Initializing MinIO adapter...")
-	minioAdapter, err := storage.NewMinIOAdapter(
-		cfg.S3.Endpoint,
-		cfg.S3.AccessKey,
-		cfg.S3.SecretKey,
-		cfg.S3.UseSSL,
-	)
-	if err != nil {
-		slog.Error("Failed to create MinIO adapter", slog.Any("error", err))
-		os.Exit(1)
-	}
-
 	// Initialize NATS connection FIRST for IAM integration
 	slog.Info("Connecting to NATS...", slog.String("url", cfg.NATS.URL))
 	natsAdapter, err := event.NewNATSAdapter(cfg.NATS.URL, cfg.NATS.User, cfg.NATS.Password, cfg.APP_PROFILE)
@@ -243,7 +226,7 @@ func main() {
 	}
 	slog.Info("Migrations completed successfully")
 
-	// // Check current migration version (optional)
+	// Check current migration version (optional)
 	// version, dirty, err := database.GetMigrationVersion(db, dbConfig.Database)
 	// if err != nil {
 	// 	log.Printf("Warning: Failed to get migration version: %v", err)
@@ -252,6 +235,23 @@ func main() {
 	// }
 
 	sys := &system.System{} // note pointer, so methods can be called
+	metricsRepo := repository.NewMetricsRepo(db,logging.Logger)
+	hostScheduler := application.NewHostScheduler(postgresRepo)
+
+	slog.Info("Initializing MinIO adapter...")
+	minioAdapter, err := storage.NewMinIOAdapter(
+		postgresRepo,
+		postgresRepo,
+		hostScheduler,
+		cfg.S3.AccessKey,
+		cfg.S3.SecretKey,
+		cfg.S3.UseSSL,
+		cfg.S3.Port,
+	)
+	if err != nil {
+		slog.Error("Failed to create MinIO adapter", slog.Any("error", err))
+		os.Exit(1)
+	}
 
 	// Initialize Metrics Client
 	metricsClient := metrics.NewMetricsClient(natsAdapter, cfg.Eureka.InstanceID)
@@ -272,6 +272,7 @@ func main() {
 	accessPointService := application.NewAccessPointService(postgresRepo, postgresRepo, natsAdapter)
 	securityService := application.NewSecurityService(postgresRepo)
 	docsService := application.NewDocsService("./docs")
+	metricsService := application.NewMetricsService(metricsRepo, postgresRepo)
 
 	// 3. Initialize Transport Layer (HTTP)
 	slog.Info("Initializing HTTP handlers...")
@@ -290,6 +291,7 @@ func main() {
 		Security:    http.NewSecurityHandler(securityService),
 		JWTValidator: nil,        
 		Docs:        http.NewDocsHandler(docsService),  
+		Metrics:        http.NewMetricsHandler(&metricsService),  
 	}
 	
 	// Initialize and start NATS controllers
