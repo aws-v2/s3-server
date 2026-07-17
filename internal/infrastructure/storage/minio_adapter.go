@@ -193,6 +193,7 @@ func NewMinIOAdapter(bucketRepo domain.BucketRepository, hostRepo domain.HostRep
 	}, nil
 }
 
+
 func (m *MinIOAdapter) clientForBucket(ctx context.Context, bucketName string) (*minio.Client, error) {
 	bucket, err := m.bucketRepo.GetBucketByStorageName(ctx, bucketName)
 	if err != nil {

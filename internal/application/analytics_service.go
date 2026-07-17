@@ -181,6 +181,9 @@ func (s *AnalyticsService) GetFileTypeDistribution(ctx context.Context) (*dto.Ge
 	}, nil
 }
 
+func IsAdmin(id string) bool {
+	return id=="00000000-0000-0000-0000-000000000000"||id=="00000000-0000-0000-0000-000000000000"	
+}
 func (s *AnalyticsService) GetBucketUsageOverTime(ctx context.Context, bucketID string, input dto.GetBucketUsageOverTimeInput) (*dto.GetBucketUsageOverTimeOutput, error) {
 	actor, _ := ctx.Value("actor").(domain.Actor)
 	filterID := actor.ID

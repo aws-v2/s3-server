@@ -1,10 +1,13 @@
 package application
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"log"
+	"path"
 	"strings"
 	"time"
 
@@ -423,6 +426,303 @@ func (s *UploadService) emitMetrics(ctx context.Context, bucketID, ownerID, regi
 	_ = s.metrics.SendS3Metrics(ctx, partial)
 }
 
+// ExportOutput is the return type for all export functions (ExportSelect, ExportBucket, ExportFolder).
+// It contains the zip file bytes and info about any files that could not be found.
+type ExportOutput struct {
+	ZipData       []byte                 `json:"-"`
+	FilesNotFound FilesNotFoundForExport `json:"files_not_found"`
+}
+
+// FilesNotFoundForExport tracks which requested files were not found in the bucket.
+type FilesNotFoundForExport struct {
+	Count int      `json:"count"`
+	Data  []string `json:"data"`
+}
+
+// ExportSelect takes a list of file keys from the client, looks them up in the bucket,
+// fetches the matching files from storage (MinIO), zips them, and returns the zip bytes.
+//
+// LEARNING NOTE (SET INTERSECTION):
+// The client sends a list of file keys they want exported.
+// We need to check which of those keys actually exist in the bucket.
+//
+// In Java, you'd use HashSet for this:
+//
+//	Set<String> requestedFiles = new HashSet<>(files);
+//	Set<String> bucketKeys = new HashSet<>();
+//	for (File f : repoFiles) bucketKeys.add(f.getKey());
+//	requestedFiles.retainAll(bucketKeys);  // intersection
+//
+// In Go, we use map[string]bool as a set:
+//
+//	repoKeySet := make(map[string]bool)
+//	for _, f := range repoFiles { repoKeySet[f.Key] = true }
+//	if repoKeySet[requestedKey] { /* found */ }
+//
+// BUG FIXES from original implementation:
+//   - make([]string, len(files)) pre-fills with empty strings, then append adds AFTER them
+//     Fix: use make([]string, 0, len(files)) — zero length, pre-allocated capacity
+//   - j < len(repo_files)-1 skips the LAST file in the repo
+//     Fix: use the map-based lookup instead of nested loops entirely
+func (s *UploadService) ExportSelect(ctx context.Context, files []string, bucketID string) (ExportOutput, error) {
+	actor := ctx.Value("userId")
+	filterID := fmt.Sprintf("%v", actor)
+	if IsAdmin(filterID) {
+		filterID = ""
+	}
+
+	// Resolve bucket
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
+	if err != nil {
+		return ExportOutput{}, err
+	}
+
+	// Get all files in the bucket from the database
+	repoFiles, err := s.fileRepo.ListFiles(ctx, bucket.ID)
+	if err != nil {
+		return ExportOutput{}, fmt.Errorf("failed to list files: %w", err)
+	}
+
+	// Build a set (map) of all keys that exist in the bucket.
+	// This is the Go equivalent of Java's HashSet — O(1) lookup instead of O(n) nested loops.
+	repoKeySet := make(map[string]string) // key -> storageName mapping
+	for _, f := range repoFiles {
+		repoKeySet[f.Key] = f.Key
+	}
+
+	// Partition the requested files into found vs not-found.
+	// IMPORTANT: use make([]string, 0) not make([]string, len(files))
+	// The latter pre-fills with empty strings, and append adds AFTER them.
+	filesFound := make([]string, 0, len(files))
+	filesNotFound := make([]string, 0)
+
+	for _, requestedKey := range files {
+		if _, exists := repoKeySet[requestedKey]; exists {
+			filesFound = append(filesFound, requestedKey)
+		} else {
+			filesNotFound = append(filesNotFound, requestedKey)
+		}
+	}
+
+	// Create zip from the found files
+	zipData, err := s.createZipFromFiles(ctx, bucket.StorageName, filesFound)
+	if err != nil {
+		return ExportOutput{}, fmt.Errorf("failed to create zip: %w", err)
+	}
+
+	// Emit metrics
+	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
+		GetRequests:     int64(len(filesFound)),
+		BytesDownloaded: int64(len(zipData)),
+	})
+
+	return ExportOutput{
+		ZipData: zipData,
+		FilesNotFound: FilesNotFoundForExport{
+			Count: len(filesNotFound),
+			Data:  filesNotFound,
+		},
+	}, nil
+}
+
+// ExportBucket exports ALL files in a bucket as a single zip file.
+// The client provides a bucket name/ID, and we zip every file in it.
+func (s *UploadService) ExportBucket(ctx context.Context, bucketID string) (ExportOutput, error) {
+	actor := ctx.Value("userId")
+	filterID := fmt.Sprintf("%v", actor)
+	if IsAdmin(filterID) {
+		filterID = ""
+	}
+
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
+	if err != nil {
+		return ExportOutput{}, err
+	}
+
+	files, err := s.fileRepo.ListFiles(ctx, bucket.ID)
+	if err != nil {
+		return ExportOutput{}, fmt.Errorf("failed to list files: %w", err)
+	}
+
+	// Collect all non-folder file keys
+	var keys []string
+	for _, f := range files {
+		if strings.HasSuffix(f.Key, "/") && f.Size == 0 {
+			continue // skip folder markers
+		}
+		keys = append(keys, f.Key)
+	}
+
+	if len(keys) == 0 {
+		return ExportOutput{}, fmt.Errorf("bucket has no files to export")
+	}
+
+	zipData, err := s.createZipFromFiles(ctx, bucket.StorageName, keys)
+	if err != nil {
+		return ExportOutput{}, fmt.Errorf("failed to create zip: %w", err)
+	}
+
+	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
+		GetRequests:     int64(len(keys)),
+		BytesDownloaded: int64(len(zipData)),
+	})
+
+	return ExportOutput{
+		ZipData: zipData,
+		FilesNotFound: FilesNotFoundForExport{
+			Count: 0,
+			Data:  []string{},
+		},
+	}, nil
+}
+
+// ExportFolder exports all files within a specific folder (prefix) of a bucket as a zip.
+// The client provides a bucket name/ID and a folder name (prefix), and we zip every file under that prefix.
+//
+// LEARNING NOTE:
+// Folders in S3/MinIO are just key prefixes. A file "images/photo.png" is "in" the "images/" folder
+// because its key starts with "images/". We use ListFilesByPrefix to find all files under the folder.
+func (s *UploadService) ExportFolder(ctx context.Context, bucketID string, folderName string) (ExportOutput, error) {
+	actor := ctx.Value("userId")
+	filterID := fmt.Sprintf("%v", actor)
+	if IsAdmin(filterID) {
+		filterID = ""
+	}
+
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
+	if err != nil {
+		return ExportOutput{}, err
+	}
+
+	// Ensure folder prefix ends with "/"
+	prefix := folderName
+	if !strings.HasSuffix(prefix, "/") {
+		prefix += "/"
+	}
+
+	files, err := s.fileRepo.ListFilesByPrefix(ctx, bucket.ID, prefix, 0)
+	if err != nil {
+		return ExportOutput{}, fmt.Errorf("failed to list files by prefix: %w", err)
+	}
+
+	// Collect non-folder file keys
+	var keys []string
+	for _, f := range files {
+		if strings.HasSuffix(f.Key, "/") && f.Size == 0 {
+			continue
+		}
+		keys = append(keys, f.Key)
+	}
+
+	if len(keys) == 0 {
+		return ExportOutput{}, fmt.Errorf("no files found in folder: %s", folderName)
+	}
+
+	zipData, err := s.createZipFromFiles(ctx, bucket.StorageName, keys)
+	if err != nil {
+		return ExportOutput{}, fmt.Errorf("failed to create zip: %w", err)
+	}
+
+	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
+		GetRequests:     int64(len(keys)),
+		BytesDownloaded: int64(len(zipData)),
+	})
+
+	return ExportOutput{
+		ZipData: zipData,
+		FilesNotFound: FilesNotFoundForExport{
+			Count: 0,
+			Data:  []string{},
+		},
+	}, nil
+}
+
+// createZipFromFiles fetches each file from MinIO by its key and writes them all
+// into a zip archive in memory.
+//
+// LEARNING NOTE:
+// archive/zip works with an in-memory buffer (bytes.Buffer).
+// For each file: GetObject returns the raw bytes -> zip.Writer.Create adds an entry -> Write the bytes.
+// Finally, Close() flushes the zip central directory.
+// This is the same pattern used in prefix_service.go's createZipArchive.
+func (s *UploadService) createZipFromFiles(ctx context.Context, storageName string, keys []string) ([]byte, error) {
+	buf := new(bytes.Buffer)
+	zipWriter := zip.NewWriter(buf)
+
+	for _, key := range keys {
+		// Fetch the file bytes from MinIO
+		data, err := s.storage.GetObject(ctx, storageName, key)
+		if err != nil {
+			log.Printf("[ExportService] failed to get object %s: %v", key, err)
+			continue // skip files that fail to download
+		}
+
+		// Create an entry in the zip with the full key as the path
+		// This preserves folder structure inside the zip
+		writer, err := zipWriter.Create(key)
+		if err != nil {
+			log.Printf("[ExportService] failed to create zip entry for %s: %v", key, err)
+			continue
+		}
+
+		if _, err := writer.Write(data); err != nil {
+			log.Printf("[ExportService] failed to write zip data for %s: %v", key, err)
+			continue
+		}
+	}
+
+	if err := zipWriter.Close(); err != nil {
+		return nil, fmt.Errorf("failed to finalize zip: %w", err)
+	}
+
+	return buf.Bytes(), nil
+}
+
+
+
+
+
+
+
+
+
+// LEETCODE:
+// these are all the files we have in the database (repo_files)
+// these are the files you want us to zip (files),
+// the set(files) must exist in the set(repo_files)
+/*
+in ajva this wouldhave been easy
+
+Set<String> files_repo = new HashSet<String>();
+files_repo.addAll(files)
+Set<String> bucket_repo = new HashSet<String>();
+bucket_repo.addAll(repo_files)
+
+
+if(bucket_repo.containsAll(files_repo)){
+
+
+}
+
+*/
+
+
+
+
+	// data, err := s.storage.GetObject(ctx, bucket.StorageName, file.Key)
+	// if err != nil {
+	// 	log.Printf("[SERVICE] DownloadFile: storage.GetObject failed")
+	// 	return "", fmt.Errorf("Some error while gettin the bytes ofa file")
+	// }
+
+
+// return output ,nil
+
+
+// }
+
+
+
 func (s *UploadService) CreateFolder(ctx context.Context, bucketID, folderName string) error {
 	actor, _ := ctx.Value("actor").(domain.Actor)
 	filterID := actor.ID
@@ -520,7 +820,21 @@ func (s *UploadService) GetFileInfo(ctx context.Context, bucketID, fileID string
 	}, nil
 }
 
-func (s *UploadService) ListFiles(ctx context.Context, bucketName string) ([]dto.FileInfoOutput, error) {
+
+// ListFiles returns the full folder-tree structure of a bucket.
+//
+// LEARNING NOTE:
+// This function builds a tree from flat file keys (e.g. "images/vacation/photo.png").
+// Each key is split by "/" to determine which folder it belongs to.
+// The result is a nested structure that the frontend can directly render
+// as a file explorer UI — folders are collapsible, files are nested inside them.
+//
+// How the tree is built:
+//   1. Fetch all files from DB (flat list of keys)
+//   2. For each file key, split by "/" to get path segments
+//   3. Insert into a recursive map: map[folderName] -> children
+//   4. Convert the map into FolderNode/FileNode structs
+func (s *UploadService) ListFiles(ctx context.Context, bucketName string) (*dto.BucketStructureOutput, error) {
 	actor := ctx.Value("userId")
 	filterID := fmt.Sprintf("%v", actor)
 	log.Printf("Updated filter id code: %s", filterID)
@@ -545,49 +859,141 @@ func (s *UploadService) ListFiles(ctx context.Context, bucketName string) ([]dto
 		return nil, fmt.Errorf("failed to list files: %w", err)
 	}
 
-	// Convert to output DTOs
-	var output []dto.FileInfoOutput
+	// Build output structure
+	output := &dto.BucketStructureOutput{
+		BucketID:   bucket.ID,
+		BucketName: bucket.Name,
+		RootFiles:  []dto.FileNode{},
+		Folders:    []dto.FolderNode{},
+	}
+
+	// folderMap holds the files grouped by their folder path.
+	// Key = folder path (e.g. "images/vacation/"), Value = list of files in that folder.
+	// Files at the root have key "".
+	folderMap := make(map[string][]dto.FileNode)
+	folderSet := make(map[string]bool)
+
+	totalFiles := 0
+
 	for _, file := range files {
-		output = append(output, dto.FileInfoOutput{
+		// Skip folder marker objects (0-byte objects with trailing slash)
+		if strings.HasSuffix(file.Key, "/") && file.Size == 0 {
+			folderSet[file.Key] = true
+			continue
+		}
+
+		totalFiles++
+
+		// Split key into directory + basename
+		// e.g. "images/vacation/photo.png" -> dir="images/vacation", base="photo.png"
+		dir := path.Dir(file.Key)    // returns "." for root-level files
+		base := path.Base(file.Key)  // returns the filename
+
+		node := dto.FileNode{
 			FileID:    file.ID,
-			BucketID:  bucketName,
+			Name:      base,
 			Key:       file.Key,
 			Size:      file.Size,
 			MimeType:  file.MimeType,
-			Metadata:  file.Metadata,
 			SHA256:    file.SHA256,
 			CreatedAt: file.CreatedAt,
-		})
+			Metadata:  file.Metadata,
+		}
+
+		if dir == "." {
+			// File is at bucket root
+			folderMap[""] = append(folderMap[""], node)
+		} else {
+			// File is inside a folder
+			folderPath := dir + "/"
+			folderMap[folderPath] = append(folderMap[folderPath], node)
+			// Register all parent folders in the set
+			// e.g. for "a/b/c/file.txt", register "a/", "a/b/", "a/b/c/"
+			parts := strings.Split(dir, "/")
+			for i := range parts {
+				parentPath := strings.Join(parts[:i+1], "/") + "/"
+				folderSet[parentPath] = true
+			}
+		}
 	}
+
+	// Set root files
+	output.RootFiles = folderMap[""]
+	if output.RootFiles == nil {
+		output.RootFiles = []dto.FileNode{}
+	}
+
+	// Build the folder tree recursively from the folder set
+	output.Folders = s.buildFolderTree("", folderSet, folderMap)
+	output.TotalFiles = totalFiles
+	output.TotalFolders = len(folderSet)
 
 	return output, nil
 }
-func IsAdmin(userId string) bool {
-	return userId == "00000000-0000-0000-0000-000000000000"
+
+// buildFolderTree recursively constructs the folder hierarchy.
+//
+// LEARNING NOTE:
+// This is a recursive tree-builder. Given a parent path (e.g. "images/"),
+// it finds all direct child folders (e.g. "images/vacation/", "images/icons/")
+// and builds FolderNode structs for each, recursing into sub-folders.
+//
+// A folder is a "direct child" of parentPath if:
+//   - It starts with parentPath
+//   - The remaining part (after parentPath) contains exactly one segment (no more "/")
+func (s *UploadService) buildFolderTree(parentPath string, folderSet map[string]bool, folderMap map[string][]dto.FileNode) []dto.FolderNode {
+	var folders []dto.FolderNode
+
+	for folderPath := range folderSet {
+		// Check if this folder is a direct child of parentPath
+		if !strings.HasPrefix(folderPath, parentPath) {
+			continue
+		}
+
+		remaining := strings.TrimPrefix(folderPath, parentPath)
+		// Direct child has exactly one segment: "foldername/"
+		// Skip deeper paths like "a/b/" when looking for children of ""
+		trimmed := strings.TrimSuffix(remaining, "/")
+		if trimmed == "" || strings.Contains(trimmed, "/") {
+			continue
+		}
+
+		// Count files recursively in this folder and all sub-folders
+		fileCount := s.countFilesRecursive(folderPath, folderMap)
+
+		files := folderMap[folderPath]
+		if files == nil {
+			files = []dto.FileNode{}
+		}
+
+		folder := dto.FolderNode{
+			Name:       trimmed,
+			Path:       folderPath,
+			Files:      files,
+			SubFolders: s.buildFolderTree(folderPath, folderSet, folderMap),
+			FileCount:  fileCount,
+		}
+
+		folders = append(folders, folder)
+	}
+
+	if folders == nil {
+		return []dto.FolderNode{}
+	}
+	return folders
 }
 
-// isAdmin checks whether the actor (like "user:abc123") is an admin.
-// In MVP mode, we load admin IDs from an env var: ADMIN_USERS=user:abc123,user:def456
-// func IsAdmin(actorID string) bool {
-// 	admins := os.Getenv("ADMIN_USERS")
-
-// 	// fallback for tests only
-// 	if strings.TrimSpace(admins) == "" {
-// 		admins = "550e8400-e29b-41d4-a716-446655440000" // Dummy admin ID
-// 	}
-
-// 	for _, a := range strings.Split(admins, ",") {
-// 		adminID := strings.TrimSpace(a)
-// 		// Handle both "user:UUID" and "UUID" formats in the environment variable
-// 		adminID = strings.TrimPrefix(adminID, "user:")
-
-// 		if adminID == actorID {
-// 			return true
-// 		}
-// 	}
-// 	return false
-// }
-
+// countFilesRecursive counts all files under a folder path (including sub-folders).
+func (s *UploadService) countFilesRecursive(folderPath string, folderMap map[string][]dto.FileNode) int {
+	count := 0
+	for fp, files := range folderMap {
+		if strings.HasPrefix(fp, folderPath) {
+			count += len(files)
+		}
+	}
+	return count
+}
+ 
 func (s *UploadService) DownloadFile(ctx context.Context, bucketId, fileID string, userID string) ([]byte, *dto.FileInfoOutput, error) {
 	filterID := userID
 	if IsAdmin(userID) {

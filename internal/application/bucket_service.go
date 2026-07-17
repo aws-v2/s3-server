@@ -199,6 +199,35 @@ func (s *BucketService) GetBucketRepository() domain.BucketRepository {
 	return s.bucketRepo
 }
 
+type ListBucketFiles struct{
+	BucketName string `json:"bucketname"`
+	FileMetadata []domain.File `json:"FileMetadata"`
+}
+
+func (s *BucketService) ListBucketFiles(ctx context.Context, bucketID string) (*ListBucketFiles, error) {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
+
+	metadata,err := s.fileRepo.ListFiles(ctx, bucket.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Emit metrics for bucket detail (Tier 2 - Head/Get)
+	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
+		HeadRequests: 1,
+	})
+
+	return &ListBucketFiles{
+		BucketName:bucket.Name,
+		FileMetadata: metadata,
+	}, nil
+}
 
 func (s *BucketService) GetBucket(ctx context.Context, bucketID string) (*dto.GetBucketOutput, error) {
 	actor, _ := ctx.Value("actor").(domain.Actor)
@@ -493,28 +522,7 @@ func (s *BucketService) SetBucketVersioning(ctx context.Context, bucketID string
 	return nil
 }
 
-// // isAdmin checks whether the actor (like "user:abc123") is an admin.
-// // In MVP mode, we load admin IDs from an env var: ADMIN_USERS=user:abc123,user:def456
-// func IsAdmin(actorID string) bool {
-// 	admins := os.Getenv("ADMIN_USERS")
-
-// 	// fallback for tests only
-// 	if strings.TrimSpace(admins) == "" {
-// 		admins = "550e8400-e29b-41d4-a716-446655440000" // Dummy admin ID
-// 	}
-
-// 	for _, a := range strings.Split(admins, ",") {
-// 		adminID := strings.TrimSpace(a)
-// 		// Handle both "user:UUID" and "UUID" formats in the environment variable
-// 		adminID = strings.TrimPrefix(adminID, "user:")
-
-// 		if adminID == actorID {
-// 			return true
-// 		}
-// 	}
-// 	return false
-// }
-
+ 
 func (s *BucketService) GetBucketVersioning(ctx context.Context, bucketID string) (*dto.VersioningOutput, error) {
 	actor, _ := ctx.Value("actor").(domain.Actor)
 	filterID := actor.ID

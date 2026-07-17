@@ -106,6 +106,18 @@ func (h *BucketHandler) GetBucketInfo(c *gin.Context) {
 
 	c.JSON(http.StatusOK, output)
 }
+// GET /:bucketId
+func (h *BucketHandler) ListBucketFiles(c *gin.Context) {
+	bucketID := c.Param("bucketId")
+
+	output, err := h.bucketService.ListBucketFiles(c.Request.Context(), bucketID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, output)
+}
 
 // UpdateBucket handles updating bucket settings
 // PATCH /:bucketIdj

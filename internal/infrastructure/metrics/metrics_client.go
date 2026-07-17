@@ -3,6 +3,7 @@ package metrics
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -75,7 +76,13 @@ func (c *MetricsClient) SendS3Metrics(ctx context.Context, req dto.S3IngestReque
 		token := c.getValidToken(req.OwnerID)
 		if token == "" {
 			var err error
-			token, err = c.tokenProvider.RequestInstanceToken(ctx, req.OwnerID, c.instanceID)
+				payload := map[string]interface{}{
+		"uid": req.OwnerID,
+	}
+
+	payloadJSON, _ := json.Marshal(payload)
+	payloadEncoded := base64.RawURLEncoding.EncodeToString(payloadJSON)
+			token, err = c.tokenProvider.RequestInstanceToken(ctx, req.OwnerID, c.instanceID,payloadEncoded)
 
 			if err == nil && token != "" {
 				c.setCachedToken(req.OwnerID, token)

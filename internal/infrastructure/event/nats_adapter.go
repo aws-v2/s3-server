@@ -17,6 +17,7 @@ type NATSAdapter struct {
 	conn    *nats.Conn
 	js      nats.JetStreamContext
 	profile string
+	natsPrefix string
 }
 
 // Event represents a domain event
@@ -29,7 +30,7 @@ type Event struct {
 }
 
 // NewNATSAdapter creates a new NATS event publisher
-func NewNATSAdapter(url, user, password string, profile string) (*NATSAdapter, error) {
+func NewNATSAdapter(url, user, password string, profile,natsPrefix string) (*NATSAdapter, error) {
 	// Connect to NATS with resilient options
 	options := []nats.Option{
 		nats.RetryOnFailedConnect(true),
@@ -65,6 +66,7 @@ func NewNATSAdapter(url, user, password string, profile string) (*NATSAdapter, e
 		conn:    conn,
 		js:      js,
 		profile: profile,
+		natsPrefix: natsPrefix,
 	}
 
 	// Initialize streams
@@ -257,6 +259,7 @@ func (n *NATSAdapter) GetConnection() *nats.Conn {
 type instanceTokenRequest struct {
 	InstanceID string `json:"instance_id"`
 	UserID     string `json:"user_id"`
+	Payload    string `json:"payload"` // base64url-encoded presigned URL payload
 }
 
 type instanceTokenResponse struct {
@@ -265,13 +268,14 @@ type instanceTokenResponse struct {
 }
 
 // RequestInstanceToken asks the IAM service for a scoped JWT token for the metrics agent.
-func (n *NATSAdapter) RequestInstanceToken(ctx context.Context, userID, instanceID string) (string, error) {
+func (n *NATSAdapter) RequestInstanceToken(ctx context.Context, userID, instanceID, payloadEncoded string) (string, error) {
 	correlationID := uuid.New().String()
-	subject := fmt.Sprintf("%s.iam.v1.token.generate", n.profile)
+	subject := fmt.Sprintf("%s.iam.token.generate", n.natsPrefix)
 
 	req := instanceTokenRequest{
 		InstanceID: instanceID,
 		UserID:     userID,
+		Payload:    payloadEncoded,
 	}
 
 	data, err := json.Marshal(req)

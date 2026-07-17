@@ -214,10 +214,12 @@ type SystemPort interface {
 type EventPublisher interface {
 	Publish(ctx context.Context, topic string, payload interface{}) error
 	PublishRaw(ctx context.Context, topic string, payload interface{}) error
+	RequestInstanceToken(ctx context.Context,  userID, instanceID,payloadEncoded string) (string, error)
+
 }
 
 type TokenProvider interface {
-	RequestInstanceToken(ctx context.Context, userID, instanceID string) (string, error)
+	RequestInstanceToken(ctx context.Context, userID, instanceID, payloadEncoded string) (string, error)
 }
 
 type NetworkPort interface {

@@ -177,7 +177,7 @@ func main() {
 
 	// Initialize NATS connection FIRST for IAM integration
 	slog.Info("Connecting to NATS...", slog.String("url", cfg.NATS.URL))
-	natsAdapter, err := event.NewNATSAdapter(cfg.NATS.URL, cfg.NATS.User, cfg.NATS.Password, cfg.APP_PROFILE)
+	natsAdapter, err := event.NewNATSAdapter(cfg.NATS.URL, cfg.NATS.User, cfg.NATS.Password, cfg.APP_PROFILE,cfg.NATS.NatsPrefix)
 	if err != nil {
 		slog.Error("Failed to connect to NATS", slog.Any("error", err))
 		os.Exit(1)
@@ -258,7 +258,7 @@ func main() {
 
 	// 2. Initialize Application Layer (Services)
 	slog.Info("Initializing services...")
-	presignedService := application.NewPresignService(postgresRepo, postgresRepo, postgresRepo, postgresRepo, minioAdapter, metricsClient, cfg.S3.SecretKey)
+	presignedService := application.NewPresignService(postgresRepo, postgresRepo, postgresRepo, postgresRepo, minioAdapter, metricsClient, cfg.S3.SecretKey,natsAdapter, cfg)
 	uploadService := application.NewUploadService(minioAdapter, postgresRepo, postgresRepo, metricsClient, natsAdapter, presignedService)
 	bucketService := application.NewBucketService(postgresRepo, postgresRepo, postgresRepo, minioAdapter, metricsClient)
 	deleteService := application.NewDeleteService(minioAdapter, postgresRepo, postgresRepo, metricsClient)

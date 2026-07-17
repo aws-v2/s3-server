@@ -97,6 +97,7 @@ func (h *PresignHandler) GenerateUploadURL(c *gin.Context) {
 
 	output, err := h.presignService.GenerateUploadURL(c.Request.Context(), input)
 	if err != nil {
+		log.Printf("Upload urlgenerationfialed: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 type HandlerForFiles struct {
@@ -324,6 +325,7 @@ func (h *HandlerForFiles) UploadFilePresign(c *gin.Context) {
 
 	// Set userId in context for the service
 	ctx := context.WithValue(c.Request.Context(), "userId", payload.UserID)
+		log.Printf("======>%v",input)
 
 	output, err := h.uploadService.UploadFile(ctx, input)
 	if err != nil {
@@ -339,6 +341,43 @@ func (h *HandlerForFiles) UploadFilePresign(c *gin.Context) {
 
 	c.JSON(http.StatusCreated, output)
 }
+
+
+func (h *HandlerForFiles) ExportBucket(c *gin.Context){
+
+}
+
+func (h *HandlerForFiles) ExportFolder(c *gin.Context){
+	
+}
+
+type SelectFiles struct {
+	Files []string `json:"files"`
+}
+func (h *HandlerForFiles) ExportSelect(c *gin.Context){
+	requestID := uuid.New().String()
+	bucketID := c.Param("bucketId")
+
+	var req SelectFiles
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON payload"})
+		return
+	}
+
+	output, err := h.uploadService.ExportSelect(c, req.Files, bucketID)
+	if err != nil {
+		log.Printf("[UploadFilePresign] upload service failed request_id=%s error=%v", requestID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, output)
+	
+	
+}
+
+
+
 // CreateFolder handles explicit folder creation (0-byte object)
 // POST /buckets/:bucketId/folders
 func (h *HandlerForFiles) CreateFolder(c *gin.Context) {
@@ -374,7 +413,7 @@ func (h *HandlerForFiles) ListFiles(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"bucketId": bucketID,
-		"count":    len(files),
+		"count":    files.RootFiles,
 		"files":    files,
 	})
 }

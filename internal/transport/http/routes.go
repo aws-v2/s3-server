@@ -81,17 +81,8 @@ func registerHealthRoutes(v1 *gin.RouterGroup, handler *HandlerForHealth) {
 func registerDocsRoutes(v1 *gin.RouterGroup, handlers *Handlers) {
 	docs := v1.Group("/docs")
 	{
-		docs.GET("", handlers.Docs.GetPublicManifest)
-		docs.GET("/:slug", handlers.Docs.GetPublicDoc)
-	}
-	internal := v1.Group("/internal/docs")
-
-	// 🔐 protect internal docs
-	// internal.Use(middleware.BearerAuthMiddleware(handlers.JWTValidator))
-
-	{
-		internal.GET("", handlers.Docs.GetInternalManifest)
-		internal.GET("/:slug", handlers.Docs.GetInternalDoc)
+		docs.GET("", handlers.Docs.GetManifest)
+		docs.GET("/:slug", handlers.Docs.GetDoc)
 	}
 }
 
@@ -133,9 +124,18 @@ func registerObjectRoutes(v1 *gin.RouterGroup, handler *HandlerForFiles) {
 		object.GET("/:bucketId/files/:fileId", handler.GetFileInfo)
 
 		// // Download file
-		// TODO: Get files for thewhole bucket, 
-		// Get files froma whole folder
 		object.GET("/:bucketId/files/:fileId/download", handler.DownloadFile)
+
+		// TODO: Get files for thewhole bucket,
+		object.GET("/export/:bucketId", handler.ExportBucket)
+		// TODO: Get files froma whole folder
+		object.GET("/export/:bucketId/:foldername",handler.ExportFolder)
+
+		// TODO: export specified files, from this specified buckets, 
+		// ie you want 4 out of the 10 fiels in this buckets,
+		// specified by the key/filenames or the sha
+		object.GET("/export/:bucketId/select",handler.ExportSelect)
+
 
 		// Delete file
 		object.DELETE("/:bucketId/files/:fileId", handler.DeleteFile)
@@ -161,6 +161,8 @@ func registerBucketRoutes(v1 *gin.RouterGroup, handlers *Handlers) {
 		buckets.POST("/create-bucket", handler.CreateBucket)
 		// List all buckets
 		buckets.GET("", handler.ListBuckets)
+				// List filenames for all files ina  bucket
+		buckets.GET("/:bucketId/files", handler.ListBucketFiles)
 		// // Get bucket info
 		buckets.GET("/:bucketId", handler.GetBucketInfo)
 		// // Update bucket settings

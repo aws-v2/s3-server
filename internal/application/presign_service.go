@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/url"
 	"s3/internal/domain"
+	"s3/internal/infrastructure/config"
 	"s3/internal/infrastructure/dto"
 	"s3/internal/infrastructure/metrics"
 	"sort"
@@ -28,6 +29,8 @@ type PresignService struct {
 	storage       domain.StoragePort
 	metrics       *metrics.MetricsClient
 	secretKey     string
+	events        domain.EventPublisher
+	cfg           *config.Config
 }
 
 func NewPresignService(
@@ -38,6 +41,8 @@ func NewPresignService(
 	storage domain.StoragePort,
 	metrics *metrics.MetricsClient,
 	secretKey string,
+	events domain.EventPublisher,
+	cfg *config.Config,
 ) *PresignService {
 	return &PresignService{
 		presignedRepo: presignedRepo,
@@ -47,6 +52,8 @@ func NewPresignService(
 		storage:       storage,
 		metrics:       metrics,
 		secretKey:     secretKey,
+		events:        events,
+		cfg:           cfg,
 	}
 }
 
@@ -54,20 +61,34 @@ func (s *PresignService) GetFileRepository() domain.FileRepository {
 	return s.fileRepo
 }
 
+func (s *PresignService) resolveBucket(ctx context.Context, idOrName string, filterID string) (domain.Bucket, error) {
+	// Try by ID first
+	bucket, err := s.bucketRepo.GetBucketByID(ctx, idOrName, filterID)
+	if err == nil {
+		return bucket, nil
+	}
+
+	// Try by Name as fallback
+	bucket, err = s.bucketRepo.GetBucketByName(ctx, idOrName, filterID)
+	if err == nil {
+		return bucket, nil
+	}
+
+	return domain.Bucket{}, fmt.Errorf("bucket not found: %s", idOrName)
+}
 
 // GenerateUploadURL creates a presigned URL for uploading
 func (s *PresignService) GenerateUploadURL(ctx context.Context, input dto.GenerateUploadURLInput) (*dto.GenerateUploadURLOutput, error) {
-	
-		// BucketID:  bucketID,
-		// AssetType: string(req.AssetType),
-		// UserId: req.UserID,
-		// Sha256: req.Sha256,
-		// AssetID: req.AssetID,
 
-		// Key:       key, // instead of the key it shouldbe the file id
-		// ExpiresIn: 900,
+	// BucketID:  bucketID,
+	// AssetType: string(req.AssetType),
+	// UserId: req.UserID,
+	// Sha256: req.Sha256,
+	// AssetID: req.AssetID,
 
- 
+	// Key:       key, // instead of the key it shouldbe the file id
+	// ExpiresIn: 900,
+
 	filterID := input.UserId
 	if IsAdmin(input.UserId) {
 		filterID = ""
@@ -78,7 +99,8 @@ func (s *PresignService) GenerateUploadURL(ctx context.Context, input dto.Genera
 	}
 
 	// Verify bucket exists
-	bucket, err := s.bucketRepo.GetBucketByID(ctx, input.BucketID, filterID)
+	// bucket, err := s.bucketRepo.GetBucketByID(ctx, input.BucketID, filterID)
+	bucket, err := s.resolveBucket(ctx, input.BucketID, filterID)
 	if err != nil {
 		return nil, fmt.Errorf("bucket not found: %w", err)
 	}
@@ -92,7 +114,7 @@ func (s *PresignService) GenerateUploadURL(ctx context.Context, input dto.Genera
 	expiresAt := time.Now().Add(time.Duration(expiresIn) * time.Second)
 
 	// Generate signed URL
-	url, err := s.GenerateSignedURL(urlID, bucket.Name, input.Key,input.AssetID,input.UserId,input.Sha256, "PUT", expiresAt, nil)
+	url, err := s.GenerateSignedURL(urlID, bucket.Name, input.Key, input.AssetID, input.UserId, input.Sha256, "PUT", expiresAt, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate signed URL: %w", err)
 	}
@@ -100,7 +122,7 @@ func (s *PresignService) GenerateUploadURL(ctx context.Context, input dto.Genera
 	// Save presigned URL metadata
 	presignedURL := &domain.PresignedURL{
 		ID:        urlID,
-		BucketID:  input.BucketID,
+		BucketID:  bucket.ID,
 		Key:       input.Key,
 		Type:      "upload",
 		ExpiresAt: expiresAt,
@@ -127,66 +149,66 @@ func (s *PresignService) GenerateUploadURL(ctx context.Context, input dto.Genera
 	}, nil
 }
 
- 
-
-
 func (s *PresignService) GenerateSignedURL(
-    urlID string,
-    bucketID string,
-    key string,
-    assetID string,
-    userID string,
-    sha256Hash string,
-    method string,
-    expiresAt time.Time,
-    fileID *string,
+	urlID string,
+	bucketID string,
+	key string,
+	assetID string,
+	userID string,
+	sha256Hash string,
+	method string,
+	expiresAt time.Time,
+	fileID *string,
 ) (string, error) {
 
-    payload := map[string]interface{}{
-        "u":   urlID,
-        "b":   bucketID,
-        "k":   key,
-        "a":   assetID,
-        "uid": userID,
-        "sha": sha256Hash,
-        "m":   method,
-        "e":   expiresAt.Unix(),
-    }
+	payload := map[string]interface{}{
+		"u":   urlID,
+		"b":   bucketID,
+		"k":   key,
+		"a":   assetID,
+		"uid": userID,
+		"sha": sha256Hash,
+		"m":   method,
+		"e":   expiresAt.Unix(),
+	}
 
-    payloadJSON, _ := json.Marshal(payload)
-    payloadEncoded := base64.RawURLEncoding.EncodeToString(payloadJSON)
-    signature := s.signString(payloadEncoded)
-    token := payloadEncoded + "." + signature
+	payloadJSON, _ := json.Marshal(payload)
+	payloadEncoded := base64.RawURLEncoding.EncodeToString(payloadJSON)
+	signature := s.signString(payloadEncoded)
+	token1:= payloadEncoded + "." + signature
 
-    values := url.Values{}
-    values.Set("t", token)
 
-    if method == "GET" {
-        if fileID == nil {
-            return "", fmt.Errorf("fileID is required for GET presigned URLs")
-        }
-        return fmt.Sprintf(
-            "/api/v1/s3/files/%s/files/%s/download?%s",
-            bucketID,
-            *fileID,
-            values.Encode(),
-        ), nil
-    }
 
-    return fmt.Sprintf(
-        "/api/v1/s3/files/upload?%s",
-        values.Encode(),
-    ), nil
+	subj := fmt.Sprint("%s.iam.token.generate", s.cfg.NATS.NatsPrefix)
+	log.Printf("[S3] Publishing completion event for URL %d to %s with internal link", urlID, subj)
+	token, err := s.events.RequestInstanceToken(context.Background(), userID, fmt.Sprintf("%d", urlID), payloadEncoded)
+	if err != nil {
+		log.Printf("[S3] ERROR: Failed to get token: %v", err)
+		return "", fmt.Errorf("Could not request tokn from IAM")
+	}  
+
+
+	values := url.Values{}
+	values.Set("token", token)
+	values.Set("t", token1)
+
+	if method == "GET" {
+		if fileID == nil {
+			return "", fmt.Errorf("fileID is required for GET presigned URLs")
+		}
+		return fmt.Sprintf(
+			"/api/v1/s3/files/%s/files/%s/download?%s",
+			bucketID,
+			*fileID,
+			values.Encode(),
+		), nil
+	}
+
+	return fmt.Sprintf(
+		"/api/v1/s3/files/upload?%s",
+		values.Encode(),
+	), nil
 }
-
-
-
-
-
-
-
-
-
 
 func (s *PresignService) signString(data string) string {
 	h := hmac.New(sha256.New, []byte(s.secretKey))
@@ -212,7 +234,7 @@ func (s *PresignService) GenerateDownloadURL(ctx context.Context, input dto.Gene
 		return nil, fmt.Errorf("file does not belong to specified bucket")
 	}
 
-	bucket, err := s.bucketRepo.GetBucketByID(ctx, input.BucketID, filterID)
+	bucket, err := s.resolveBucket(ctx, input.BucketID, filterID)
 	if err != nil {
 		return nil, fmt.Errorf("bucket not found: %w", err)
 	}
@@ -225,20 +247,16 @@ func (s *PresignService) GenerateDownloadURL(ctx context.Context, input dto.Gene
 	urlID := uuid.New().String()
 	expiresAt := time.Now().Add(time.Duration(expiresIn) * time.Second)
 
-	url, err := s.GenerateSignedURL(urlID, bucket.Name, file.Key,input.AssetID,input.UserID,input.Sha256, "GET", expiresAt, &file.ID)
+	url, err := s.GenerateSignedURL(urlID, bucket.Name, file.Key, input.AssetID, input.UserID, input.Sha256, "GET", expiresAt, &file.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate signed URL: %w", err)
 	}
 
-
-
-
-log.Printf("The presignedUrlgenerated %s",url)
-
+	log.Printf("The presignedUrlgenerated %s", url)
 
 	presignedURL := &domain.PresignedURL{
 		ID:        urlID,
-		BucketID:  input.BucketID,
+		BucketID:  bucket.ID,
 		FileID:    input.FileID,
 		Key:       file.Key,
 		Type:      "download",
@@ -358,7 +376,7 @@ func (s *PresignService) GenerateMultipartUploadURLs(ctx context.Context, input 
 	}
 
 	// Verify bucket exists
-	bucket, err := s.bucketRepo.GetBucketByID(ctx, input.BucketID, filterID)
+	bucket, err := s.resolveBucket(ctx, input.BucketID, filterID)
 	if err != nil {
 		return nil, fmt.Errorf("bucket not found: %w", err)
 	}
@@ -375,7 +393,7 @@ func (s *PresignService) GenerateMultipartUploadURLs(ctx context.Context, input 
 	upload := &domain.MultipartUpload{
 		ID:        uuid.New().String(),
 		UploadID:  uploadID,
-		BucketID:  input.BucketID,
+		BucketID:  bucket.ID,
 		Key:       input.Key,
 		Status:    "initiated",
 		Parts:     []domain.Part{},
@@ -404,7 +422,7 @@ func (s *PresignService) GenerateMultipartUploadURLs(ctx context.Context, input 
 		// Save presigned URL metadata for each part
 		presignedURL := &domain.PresignedURL{
 			ID:        urlID,
-			BucketID:  input.BucketID,
+			BucketID:  bucket.ID,
 			Key:       input.Key,
 			Type:      "multipart",
 			ExpiresAt: expiresAt,
@@ -470,7 +488,7 @@ func (s *PresignService) CompleteMultipartUpload(ctx context.Context, input dto.
 		return nil, fmt.Errorf("upload does not belong to specified bucket")
 	}
 
-	bucket, err := s.bucketRepo.GetBucketByID(ctx, input.BucketID, filterID)
+	bucket, err := s.resolveBucket(ctx, input.BucketID, filterID)
 	if err != nil {
 		return nil, fmt.Errorf("bucket not found: %w", err)
 	}
@@ -569,7 +587,7 @@ func (s *PresignService) AbortMultipartUpload(ctx context.Context, input dto.Abo
 		return fmt.Errorf("upload does not belong to specified bucket")
 	}
 
-	bucket, err := s.bucketRepo.GetBucketByID(ctx, input.BucketID, filterID)
+	bucket, err := s.resolveBucket(ctx, input.BucketID, filterID)
 	if err != nil {
 		return fmt.Errorf("bucket not found: %w", err)
 	}
