@@ -184,6 +184,7 @@ func (r *PostgresRepository) SaveFile(ctx context.Context, file domain.File) err
 		return fmt.Errorf("failed to marshal metadata: %w", err)
 	}
 
+	
 	query := `
 		INSERT INTO files (id, bucket_id, key, size, mime_type, metadata, sha256, created_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -202,6 +203,8 @@ func (r *PostgresRepository) SaveFile(ctx context.Context, file domain.File) err
 	if err != nil {
 		return fmt.Errorf("failed to save file: %w", err)
 	}
+
+
 
 	return nil
 }
@@ -708,7 +711,7 @@ func (r *PostgresRepository) GetFilesBySHA256(ctx context.Context, sha256 string
 	return files, nil
 }
 
-
+var mkdir string =""
 // GetFilesBySHA256 retrieves all files matching a specific sha256 hash
 func (r *PostgresRepository) GetFilesByARN(ctx context.Context, sha256 string) ([]domain.File, error) {
 	query := `

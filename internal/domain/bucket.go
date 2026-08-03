@@ -2,6 +2,11 @@ package domain
 
 import "time"
 
+type ListBucketFiles struct {
+	BucketName   string `json:"bucketname"`
+	FileMetadata []File `json:"FileMetadata"`
+}
+
 type Bucket struct {
 	ID                string             `json:"bucket_id"`
 	Name              string             `json:"name"`
@@ -68,4 +73,45 @@ type StorageLensSnapshot struct {
 	ObjectCount              int64            `json:"object_count"`
 	ActiveBuckets            int              `json:"active_buckets"`
 	StorageClassDistribution map[string]int64 `json:"storage_class_distribution"`
+}
+
+type Folder struct {
+	Parent  string
+	Name    string    `json:"name"`
+	Size    int64     `json:"size"`
+	Files   []*File   `json:"files"`
+	Folders []*Folder `json:"folders"`
+}
+type Prefix struct {
+	ID             string    `json:"id"`
+	BucketID       string    `json:"bucket_id"`
+	ParentID       string    `json:"parent_id"`
+	ChildFolderIDs []string  `json:"child_folder_ids"`
+	ChildFileIDs   []string  `json:"child_file_ids"`
+	Size           int64     `json:"size"`
+	Name           int64     `json:"name"`
+	UpdatedAt      time.Time `json:"updated_at"`
+	CreatedAt time.Time `json:"created_at"`
+}
+type BucketInfo struct {
+	BucketID           string    `json:"bucket_id"`
+	BucketName         string    `json:"bucket_name"`
+	ARN                string    `json:"arn"`
+	Region             string    `json:"region"`
+	BucketType         string    `json:"bucket_type"`
+	CreatedAt          time.Time `json:"created_at"`
+	TotalSize          int64     `json:"total_size"`
+	TotalFileCount     int       `json:"total_file_count"`
+	TotalFolderCount   int       `json:"total_folder_count"`
+	CurrentUtilization int       `json:"current_utilization"`
+}
+
+type BucketRoot struct {
+	Folders []*Folder `json:"folders"`
+	Files   []*File   `json:"files"`
+}
+
+type BucketInfoResponse struct {
+	BucketInfo BucketInfo `json:"bucket_info"`
+	Root       BucketRoot `json:"root"`
 }

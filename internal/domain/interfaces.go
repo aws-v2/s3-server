@@ -70,6 +70,8 @@ type FileRepository interface {
 type BucketRepository interface {
 	SaveBucket(ctx context.Context, bucket *Bucket) (Bucket, error)
 	GetBucketByID(ctx context.Context, bucketId string, ownerID string) (Bucket, error)
+	GetPrefixByName(ctx context.Context, bucketId string, prefixName string) (Prefix, error)
+	CreatePrefix(ctx context.Context, bucketId string, prefixName string) (Prefix, error)
 	GetBucketByName(ctx context.Context, name string, ownerID string) (Bucket, error)
 	GetBucketByStorageName(ctx context.Context, storageName string) (Bucket, error)
 	ListBuckets(ctx context.Context, ownerID string) ([]Bucket, error)
@@ -199,6 +201,7 @@ type RepositoryPort interface {
 	PolicyRepository
 	StorageLensRepository
 	HealthRepository
+	
 }
 
 type Logger interface {

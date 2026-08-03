@@ -1,9 +1,11 @@
 package database
+
 import (
-    "context"
-    "database/sql"
-    "fmt"
-    "time"
+	"context"
+	"database/sql"
+	"fmt"
+	"log/slog"
+	"time"
 )
 
 type Config struct {
@@ -17,6 +19,7 @@ type Config struct {
     MaxIdleConns    int
     ConnMaxLifetime time.Duration
     ConnMaxIdleTime time.Duration
+    ChannelBinding  string // "" locally, "require" for Neon
 }
 
 func NewPostgresDB(cfg Config) (*sql.DB, error) {
@@ -24,6 +27,11 @@ func NewPostgresDB(cfg Config) (*sql.DB, error) {
         "host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
         cfg.Host, cfg.Port, cfg.User, cfg.Password, cfg.Database, cfg.SSLMode,
     )
+	slog.Info("Running database migrations---...",slog.String("with dsn",dsn))
+
+    if cfg.ChannelBinding != "" {
+        dsn += fmt.Sprintf(" channel_binding=%s", cfg.ChannelBinding)
+    }
 
     db, err := sql.Open("postgres", dsn)
     if err != nil {

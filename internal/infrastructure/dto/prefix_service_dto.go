@@ -14,6 +14,12 @@ type ListByPrefixOutput struct {
 	CommonPrefixes []string   `json:"common_prefixes,omitempty"`
 	Total          int        `json:"total"`
 }
+type CreatePrefixInput struct {
+	Name string `json:"name"`
+	Parent string `json:"parent"`
+	BucketId string 
+	FildterId string 
+}
 
 type FileInfo struct {
 	Key         string            `json:"key"`
@@ -66,6 +72,7 @@ type CountByPrefixOutput struct {
 }
 
 type ArchiveByPrefixInput struct {
+	ExportType string `json:"export_type"`
 	BucketID    string `json:"bucket_id"`
 	Prefix      string `json:"prefix" binding:"required"`
 	ArchiveName string `json:"archive_name" binding:"required"`
@@ -73,7 +80,14 @@ type ArchiveByPrefixInput struct {
 	UserID  string `json:"user_id"`
 	CorrelationID string `json:"correlation_id"`
 
+}
 
+type ArchiveByPrefixInputMessage struct {
+	BucketID    string `json:"bucket_id"`
+	Prefix      string `json:"prefix" binding:"required"`
+	ArchiveName string `json:"archive_name" binding:"required"`
+	Format      string `json:"format"` // zip or tar
+	UserID      string `json:"user_id"`
 }
 
 type ArchiveByPrefixOutput struct {

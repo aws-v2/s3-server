@@ -8,7 +8,7 @@
 
   "categories": [
     {
-      "title": "Getting Started",
+      "title": "Getting Started-internal",
       "items": [
         {
           "title": "Overview & Architecture",

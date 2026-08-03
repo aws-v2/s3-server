@@ -19,6 +19,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
 
@@ -149,6 +150,7 @@ func (s *UploadService) UploadObjectReader(ctx context.Context, bucketID, key st
 }
 
 type UploadFileInput struct {
+	Sha256              string              `json:"sha256"`
 	BucketID            string              `json:"bucketId"`
 	Prefix              string              `json:"prefix"`
 	Files               []FileContent       `json:"files"`
@@ -332,7 +334,13 @@ func (s *UploadService) UploadFile(
 			objectKey,
 		)
 
-		sha256Value = utils.CalculateSHA256Bytes(fileData)
+		if input.Sha256 == "" {
+			sha256Value = utils.CalculateSHA256Bytes(fileData)
+
+		} else {
+			sha256Value = input.Sha256
+
+		}
 
 		file := domain.File{
 			ID:        generateID(),
@@ -405,7 +413,7 @@ func (s *UploadService) UploadFile(
 
 	return &UploadFileOutput{
 		FileIDs: fileIDs,
-		SHA256: sha256Value,
+		SHA256:  sha256Value,
 		Result: fmt.Sprintf(
 			"Successfully processed %d files",
 			len(input.Files),
@@ -429,7 +437,7 @@ func (s *UploadService) emitMetrics(ctx context.Context, bucketID, ownerID, regi
 // ExportOutput is the return type for all export functions (ExportSelect, ExportBucket, ExportFolder).
 // It contains the zip file bytes and info about any files that could not be found.
 type ExportOutput struct {
-	ZipData       []byte                 `json:"-"`
+	ZipData       []byte                 `json:"zip_data"`
 	FilesNotFound FilesNotFoundForExport `json:"files_not_found"`
 }
 
@@ -628,6 +636,8 @@ func (s *UploadService) ExportFolder(ctx context.Context, bucketID string, folde
 		BytesDownloaded: int64(len(zipData)),
 	})
 
+	// test:= make([]byte, 2)
+
 	return ExportOutput{
 		ZipData: zipData,
 		FilesNotFound: FilesNotFoundForExport{
@@ -648,7 +658,7 @@ func (s *UploadService) ExportFolder(ctx context.Context, bucketID string, folde
 func (s *UploadService) createZipFromFiles(ctx context.Context, storageName string, keys []string) ([]byte, error) {
 	buf := new(bytes.Buffer)
 	zipWriter := zip.NewWriter(buf)
-
+	log.Printf("---->&%v", storageName)
 	for _, key := range keys {
 		// Fetch the file bytes from MinIO
 		data, err := s.storage.GetObject(ctx, storageName, key)
@@ -678,14 +688,6 @@ func (s *UploadService) createZipFromFiles(ctx context.Context, storageName stri
 	return buf.Bytes(), nil
 }
 
-
-
-
-
-
-
-
-
 // LEETCODE:
 // these are all the files we have in the database (repo_files)
 // these are the files you want us to zip (files),
@@ -706,22 +708,15 @@ if(bucket_repo.containsAll(files_repo)){
 
 */
 
-
-
-
-	// data, err := s.storage.GetObject(ctx, bucket.StorageName, file.Key)
-	// if err != nil {
-	// 	log.Printf("[SERVICE] DownloadFile: storage.GetObject failed")
-	// 	return "", fmt.Errorf("Some error while gettin the bytes ofa file")
-	// }
-
+// data, err := s.storage.GetObject(ctx, bucket.StorageName, file.Key)
+// if err != nil {
+// 	log.Printf("[SERVICE] DownloadFile: storage.GetObject failed")
+// 	return "", fmt.Errorf("Some error while gettin the bytes ofa file")
+// }
 
 // return output ,nil
 
-
 // }
-
-
 
 func (s *UploadService) CreateFolder(ctx context.Context, bucketID, folderName string) error {
 	actor, _ := ctx.Value("actor").(domain.Actor)
@@ -792,8 +787,62 @@ func (s *UploadService) GetFileInfo(ctx context.Context, bucketID, fileID string
 		HeadRequests: 1,
 	})
 
+	fmt.Println("---> %s", fileID)
 	// Get file from DB (try ID first, then Key)
-	file, err := s.fileRepo.GetFileByID(ctx, fileID)
+	// file, err := s.fileRepo.GetFileByID(ctx, fileID)
+	file, err := s.fileRepo.GetFileByIDOrKey(ctx, fileID, bucketID)
+
+	if err != nil {
+		// Fallback to Key
+		var errKey error
+		file, errKey = s.fileRepo.GetFileByKey(ctx, bucket.ID, fileID)
+		if errKey != nil {
+			return nil, fmt.Errorf("file not found: %w", err)
+		}
+	}
+
+	// Verify file belongs to bucket
+	if file.BucketID != bucket.ID {
+		return nil, fmt.Errorf("file not in specified bucket")
+	}
+	fileMetadata := make(map[string]string, 0)
+
+	fileMetadata["arn"] = "arni"
+
+	file.Metadata = fileMetadata
+
+	return &dto.FileInfoOutput{
+		FileID:    file.ID,
+		BucketID:  bucket.Name,
+		Key:       file.Key,
+		Size:      file.Size,
+		MimeType:  file.MimeType,
+		Metadata:  file.Metadata,
+		SHA256:    file.SHA256,
+		CreatedAt: file.CreatedAt,
+	}, nil
+}
+
+func (s *UploadService) GetFileInfoFolder(ctx context.Context, bucketID, fileID, folderID string) (*dto.FileInfoOutput, error) {
+	actor, _ := ctx.Value("actor").(domain.Actor)
+	filterID := actor.ID
+	if IsAdmin(actor.ID) {
+		filterID = ""
+	}
+
+	// Resolve bucket by ID or Name
+	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Emit metrics for Head (Tier 2)
+	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
+		HeadRequests: 1,
+	})
+
+	// Get file from DB (try ID first, then Key)
+	file, err := s.fileRepo.GetFileByIDOrKey(ctx, fileID, bucketID)
 	if err != nil {
 		// Fallback to Key
 		var errKey error
@@ -820,7 +869,6 @@ func (s *UploadService) GetFileInfo(ctx context.Context, bucketID, fileID string
 	}, nil
 }
 
-
 // ListFiles returns the full folder-tree structure of a bucket.
 //
 // LEARNING NOTE:
@@ -834,8 +882,9 @@ func (s *UploadService) GetFileInfo(ctx context.Context, bucketID, fileID string
 //   2. For each file key, split by "/" to get path segments
 //   3. Insert into a recursive map: map[folderName] -> children
 //   4. Convert the map into FolderNode/FileNode structs
-func (s *UploadService) ListFiles(ctx context.Context, bucketName string) (*dto.BucketStructureOutput, error) {
-	actor := ctx.Value("userId")
+
+func (s *UploadService) ListFiles(ctx context.Context, c *gin.Context,bucketName string) (*dto.BucketStructureOutput, error) {
+	actor := c.GetString("userId")
 	filterID := fmt.Sprintf("%v", actor)
 	log.Printf("Updated filter id code: %s", filterID)
 	if IsAdmin(filterID) {
@@ -886,8 +935,8 @@ func (s *UploadService) ListFiles(ctx context.Context, bucketName string) (*dto.
 
 		// Split key into directory + basename
 		// e.g. "images/vacation/photo.png" -> dir="images/vacation", base="photo.png"
-		dir := path.Dir(file.Key)    // returns "." for root-level files
-		base := path.Base(file.Key)  // returns the filename
+		dir := path.Dir(file.Key)   // returns "." for root-level files
+		base := path.Base(file.Key) // returns the filename
 
 		node := dto.FileNode{
 			FileID:    file.ID,
@@ -993,7 +1042,7 @@ func (s *UploadService) countFilesRecursive(folderPath string, folderMap map[str
 	}
 	return count
 }
- 
+
 func (s *UploadService) DownloadFile(ctx context.Context, bucketId, fileID string, userID string) ([]byte, *dto.FileInfoOutput, error) {
 	filterID := userID
 	if IsAdmin(userID) {

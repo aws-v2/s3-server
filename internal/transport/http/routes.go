@@ -28,16 +28,10 @@ type Handlers struct {
 
 // RegisterRoutes registers all application routes
 func RegisterRoutes(router *gin.Engine, handlers *Handlers) {
-	// API group (Gateway strips /api/v1)
-	// router.Use(middleware.CORSMiddleware()) // Disabled: CORS handled by API Gateway
 	v1 := router.Group("/api/v1/s3")
 
 	v1.Use(middleware.AuthContextMiddleware())
-
-	// Chain authentication middlewares: try API key first, then JWT
-	// v1.Use(middleware.APIKeyAuthMiddleware(handlers.Validator))------------>>IAM
-	// v1.Use(middleware.BearerAuthMiddleware(handlers.JWTValidator))------------>>IAM
-
+ 
 	// Track all V1 requests
 	v1.Use(handlers.Analytics.TrackRequestMiddleware())
 
@@ -57,6 +51,7 @@ func RegisterRoutes(router *gin.Engine, handlers *Handlers) {
 	registerDocsRoutes(v1, handlers)
 
 }
+
 // registerPrefixRoutes registers prefix-based operation routes
 func registerMetricsRoutes(v1 *gin.RouterGroup, handler *MetricsHandler) {
 	metrics := v1.Group("/metrics")
@@ -66,17 +61,18 @@ func registerMetricsRoutes(v1 *gin.RouterGroup, handler *MetricsHandler) {
 		metrics.POST("/hosts/heartbeat", handler.HandleHeartbeat)
 	}
 }
+
 // registerHealthRoutes registers all health check routes
 func registerHealthRoutes(v1 *gin.RouterGroup, handler *HandlerForHealth) {
 
-	health := v1.Group("/health")  
+	health := v1.Group("/health")
 	{
-		health.GET("/ping", handler.Ping)
+		health.GET("", handler.Ping)
 		health.GET("/status", handler.GetDetailedStatus)
 		health.GET("/metrics", handler.GetMetrics)
 
 	}
-	
+
 }
 func registerDocsRoutes(v1 *gin.RouterGroup, handlers *Handlers) {
 	docs := v1.Group("/docs")
@@ -95,47 +91,55 @@ func registerObjectRoutes(v1 *gin.RouterGroup, handler *HandlerForFiles) {
 		GB = 1 << 30
 	)
 
-	// object.Use(middleware.APIKeyAuthMiddleware(validator))------------>>IAM
 
 	{
 		// Upload file to bucket
 		object.POST("/upload/:bucketId",
-			middleware.AllowedFileTypesMiddleware(),
-			// middleware.MaxFileSizeMiddleware(10<<20),
 			middleware.MaxFileSizeMiddleware(1*GB),
+			middleware.EmitMetricsMiddleware("files"),
 
 			handler.UploadFile)
 
-			// Upload file to bucket
+		// Upload file to bucket
 		object.PUT("/upload",
-			middleware.AllowedFileTypesMiddleware(),
-			// middleware.MaxFileSizeMiddleware(10<<20),
 			middleware.MaxFileSizeMiddleware(1*GB),
+			middleware.EmitMetricsMiddleware("files"),
 
 			handler.UploadFilePresign)
 
 		// Create direct folder
 		object.POST("/folders/:bucketId", handler.CreateFolder)
 
-		// List files in bucket
+		//  "/files/bucketid:990n/files/test/format_logs.py"
+
+		// List files in bucketlastUploadResult
 		object.GET("/:bucketId", handler.ListFiles)
 
 		// Get file info/metadata
 		object.GET("/:bucketId/files/:fileId", handler.GetFileInfo)
+		// object.GET("/:bucketId/files/:folderName", handler.GetFileInfoFolder)
 
 		// // Download file
-		object.GET("/:bucketId/files/:fileId/download", handler.DownloadFile)
+		object.GET("/:bucketId/files/:fileId/download",
+			middleware.EmitMetricsMiddleware("files"),
+			handler.DownloadFile)
 
 		// TODO: Get files for thewhole bucket,
-		object.GET("/export/:bucketId", handler.ExportBucket)
+		object.GET("/export/:bucketId",
+			middleware.EmitMetricsMiddleware("files"),
+			handler.ExportBucket)
 		// TODO: Get files froma whole folder
-		object.GET("/export/:bucketId/:foldername",handler.ExportFolder)
+		object.GET("/export/:bucketId/:foldername",
+			middleware.EmitMetricsMiddleware("files"),
 
-		// TODO: export specified files, from this specified buckets, 
+			handler.ExportFolder)
+
+		// TODO: export specified files, from this specified buckets,
 		// ie you want 4 out of the 10 fiels in this buckets,
 		// specified by the key/filenames or the sha
-		object.GET("/export/:bucketId/select",handler.ExportSelect)
-
+		object.GET("/export/:bucketId/select",
+			middleware.EmitMetricsMiddleware("files"),
+			handler.ExportSelect)
 
 		// Delete file
 		object.DELETE("/:bucketId/files/:fileId", handler.DeleteFile)
@@ -144,10 +148,14 @@ func registerObjectRoutes(v1 *gin.RouterGroup, handler *HandlerForFiles) {
 		object.PATCH("/:bucketId/files/:fileId", handler.UpdateFileMetadata)
 
 		// Copy file
-		object.POST("/:bucketId/files/:fileId/copy", handler.CopyFile)
+		object.POST("/:bucketId/files/:fileId/copy",
+			middleware.EmitMetricsMiddleware("files"),
+			handler.CopyFile)
 
 		// Move file
-		object.POST("/:bucketId/files/:fileId/move", handler.MoveFile)
+		object.POST("/:bucketId/files/:fileId/move",
+			middleware.EmitMetricsMiddleware("files"),
+			handler.MoveFile)
 	}
 }
 
@@ -161,7 +169,7 @@ func registerBucketRoutes(v1 *gin.RouterGroup, handlers *Handlers) {
 		buckets.POST("/create-bucket", handler.CreateBucket)
 		// List all buckets
 		buckets.GET("", handler.ListBuckets)
-				// List filenames for all files ina  bucket
+		// List filenames for all files ina  bucket
 		buckets.GET("/:bucketId/files", handler.ListBucketFiles)
 		// // Get bucket info
 		buckets.GET("/:bucketId", handler.GetBucketInfo)
@@ -267,16 +275,23 @@ func registerBatchRoutes(v1 *gin.RouterGroup, handler *BatchHandler) {
 	batch := v1.Group("/batch")
 	{
 		// Batch upload files
-		batch.POST("/upload", handler.BatchUpload)
+		batch.POST("/upload",
+			middleware.EmitMetricsMiddleware("batch"),
+			handler.BatchUpload)
 
 		// Batch delete files
 		batch.DELETE("/delete", handler.BatchDelete)
 
 		// Batch copy files
-		batch.POST("/copy", handler.BatchCopy)
+		batch.POST("/copy",
+			middleware.EmitMetricsMiddleware("batch"),
+
+			handler.BatchCopy)
 
 		// Batch move files
-		batch.POST("/move", handler.BatchMove)
+		batch.POST("/move",
+			middleware.EmitMetricsMiddleware("batch"),
+			handler.BatchMove)
 
 		// Batch update metadata
 		batch.PATCH("/metadata", handler.BatchUpdateMetadata)
@@ -298,12 +313,16 @@ func registerPrefixRoutes(v1 *gin.RouterGroup, handler *PrefixHandler) {
 	{
 		// List files by prefix
 		prefix.GET("/:bucketId/list", handler.ListByPrefix)
+		prefix.GET("/:bucketId/:folderId", handler.PrefixContent)
+		prefix.POST("/:bucketId", handler.PrefixContent)
 
 		// Delete files by prefix
 		prefix.DELETE("/:bucketId/delete", handler.DeleteByPrefix)
 
 		// Copy files by prefix
-		prefix.POST("/:bucketId/copy", handler.CopyByPrefix)
+		prefix.POST("/:bucketId/copy",
+			middleware.EmitMetricsMiddleware("prefix"),
+			handler.CopyByPrefix)
 
 		// Get total size of files by prefix
 		prefix.GET("/:bucketId/size", handler.GetSizeByPrefix)
@@ -312,7 +331,9 @@ func registerPrefixRoutes(v1 *gin.RouterGroup, handler *PrefixHandler) {
 		prefix.GET("/:bucketId/count", handler.CountByPrefix)
 
 		// Archive files by prefix (zip/tar)
-		prefix.POST("/:bucketId/archive", handler.ArchiveByPrefix)
+		prefix.POST("/:bucketId/archive",
+			middleware.EmitMetricsMiddleware("prefix"),
+			handler.ArchiveByPrefix)
 
 		// Set metadata for files by prefix
 		prefix.PATCH("/:bucketId/metadata", handler.SetMetadataByPrefix)
@@ -388,7 +409,9 @@ func registerMultipartRoutes(v1 *gin.RouterGroup, handler *MultipartHandler) {
 		multipart.POST("/:bucketId/initiate", handler.InitiateMultipartUpload)
 
 		// Upload a part
-		multipart.PUT("/:bucketId/:uploadId/parts/:partNumber", handler.UploadPart)
+		multipart.PUT("/:bucketId/:uploadId/parts/:partNumber",
+			middleware.EmitMetricsMiddleware("multipart"),
+			handler.UploadPart)
 
 		// Complete multipart upload
 		multipart.POST("/:bucketId/:uploadId/complete", handler.CompleteMultipartUpload)

@@ -142,6 +142,18 @@ CREATE INDEX idx_access_logs_timestamp ON access_logs(timestamp);
 CREATE INDEX idx_access_logs_action ON access_logs(action);
 
 -- Multipart Uploads table
+CREATE TABLE IF NOT EXISTS folders (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    bucket_id VARCHAR(255) UNIQUE NOT NULL,
+    size INTEGER(255) UNIQUE NOT NULL,
+    name VARCHAR(255) UNIQUE NOT NULL,
+    parent_id VARCHAR(255) UNIQUE NOT NULL,
+    child_folder_ids JSONB DEFAULT '[]',
+    child_file_ids JSONB DEFAULT '[]',
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+
+)
 CREATE TABLE IF NOT EXISTS multipart_uploads (
     id VARCHAR(255) PRIMARY KEY,
     upload_id VARCHAR(255) UNIQUE NOT NULL,

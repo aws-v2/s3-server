@@ -22,3 +22,8 @@ type CreateAccessPointInput struct {
 	NetworkOrigin string `json:"networkOrigin"`
 	VpcID         string `json:"vpcId,omitempty"`
 }
+
+type UpdateAccessPointOrigin struct {
+		NetworkOrigin string `json:"networkOrigin" binding:"required"`
+		VpcID         string `json:"vpcId"`
+	}

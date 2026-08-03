@@ -179,8 +179,8 @@ func (s *PresignService) GenerateSignedURL(
 
 
 
-	subj := fmt.Sprint("%s.iam.token.generate", s.cfg.NATS.NatsPrefix)
-	log.Printf("[S3] Publishing completion event for URL %d to %s with internal link", urlID, subj)
+	subj := fmt.Sprintf("%s.iam.token.generate", s.cfg.NATS.NatsPrefix)
+	log.Printf("[S3] Publishing completion event for URL %s to %s with internal link fora file with thsi sha: %s", urlID, subj,sha256Hash)
 	token, err := s.events.RequestInstanceToken(context.Background(), userID, fmt.Sprintf("%d", urlID), payloadEncoded)
 	if err != nil {
 		log.Printf("[S3] ERROR: Failed to get token: %v", err)

@@ -2,6 +2,21 @@ package domain
 
 import "time"
 
+
+
+
+type S3Metric struct{
+	Service string `json:"service"`
+	Type string `json:"type"`
+	ResourceID string `json:"resource_id"`
+	Data interface{} `json:"data"`
+
+}
+
+
+
+
+
 type StorageUsage struct {
 	TotalSize       int64                  `json:"total_size"`
 	TotalFiles      int                    `json:"total_files"`
@@ -50,3 +65,16 @@ type AccessLog struct {
 	Timestamp time.Time `json:"timestamp"`
 	Size      int64     `json:"size"`
 }
+
+
+/*
+fielupload  bandwidth---like when we a re ingesting a file into the system 
+we could check the file size a from that we can somehow get the file size and  send the metrics, 
+
+then we could bill the data storage  per 2hrs, a scheduler that goes through all the buckets 
+
+
+if the file is sownloaded we could ahve a middlewere that sends a metric whn that route is hit,
+
+
+*/

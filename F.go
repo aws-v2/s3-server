@@ -443,9 +443,8 @@ type ResponseStruct struct {
 func (h *HandlerForFiles) ListFiles(c *gin.Context) {
 	bucketID := c.Param("bucketId")
 	requestID := c.GetString("requestId")
-// TODO: inserting the *gin.Context as aparameter is glue
-// code it should be removed
-	files, err := h.uploadService.ListFiles(c.Request.Context(),c, bucketID)
+
+	files, err := h.uploadService.ListFiles(c.Request.Context(), bucketID)
 	if err != nil {
 		log.Printf("[Handler:ListFiles] Service call, requestID %s error %s", requestID, err.Error())
 		utils.RespondError(c, http.StatusInternalServerError, fmt.Errorf("failed to list files"))
@@ -554,8 +553,7 @@ type SignedPayload struct {
 // GET /:bucketId/files/:fileId/download?signature=xxx&expires=unix
 func (h *HandlerForFiles) DownloadFile(c *gin.Context) {
 	bucketID := c.Param("bucketId")
-	fileID := "b6384990-63c2-408b-9a4c-6709e93c7427"
-	// fileID := c.Param("fileId")
+	fileID := c.Param("fileId")
 	userID := c.GetString("userId")
 	requestID := c.GetString("requestId")
 

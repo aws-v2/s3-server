@@ -1,19 +1,27 @@
 {
-  "service": "S3",
-  "version": "V1",
+  "service": "s3",
+  "version": "v1",
+  "type": "internal-docs",
+  "description": "Internal engineering documentation for the s3 server. Covers architecture, API design, storage model, deployment, developer workflows, and operational considerations.",
+  "audience": "developers",
+  "visibility": "public",
+
   "categories": [
     {
-      "title": "Getting Started",
+      "title": "Getting started",
       "items": [
-        { "title": "S3 Overview", "slug": "s3-overview" },
-        { "title": "Quickstart", "slug": "s3-quickstart" }
+        { "title": "Architecture & Design", "slug": "architecture" },
+        { "title": "API Architecture", "slug": "api-architecture" },
+        { "title": "Storage Design", "slug": "storage-design" },
+        { "title": "Deployment & Runtime", "slug": "deployment" },
+        { "title": "Developer Guide", "slug": "developer-guide" }
       ]
     },
     {
-      "title": "Core Concepts",
+      "title": "Deeper dive",
       "items": [
-        { "title": "Buckets", "slug": "s3-buckets" },
-        { "title": "Objects", "slug": "s3-objects" }
+        { "title": "Overview & Quickstart", "slug": "overview" },
+        { "title": "API Summary", "slug": "api" }
       ]
     }
   ]

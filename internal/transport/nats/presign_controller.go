@@ -94,10 +94,19 @@ func NewPresignController(
 const (
 	SystemUserID          = "SYSTEM"
 	DefaultGameBucket     = "gameliftgames-default"
+	DefaultLambdaBucket   = "lambdas-default-bucket"
 	DefaultTemplateBucket = "templatebucket-default"
 	DefaultAgentBucket    = "agent-binary-system"
 	DefaultAIBucket       = "scripts"
 	DefaultBuckets        = "libvirt-templates-system,agent-binary-system,system-bucket-1,system-bucket-2,system-bucket-3,system-bucket-4,system-bucket-5"
+)
+
+const (
+	AssetTypeGame     AssetType = "game"
+	AssetTypeTemplate AssetType = "template"
+	AssetTypeAgent    AssetType = "agent"
+	AssetTypeScript   AssetType = "script"
+	AssetTypeLambda   AssetType = "lambda"
 )
 
 type createPresignDownloadURLRequest struct {
@@ -178,10 +187,10 @@ type CreateDefaultBucketResponse struct {
 }
 
 type ArchiveByPrefixUrl struct {
-	BucketID string `json:"bucket_id"`
-	URL      string `json:"url"`
-
-	FileCount int `json:"file_count"` // zip or tar
+	BucketID  string `json:"bucket_id"`
+	URL       string `json:"url"`
+	Sha256    string `json:"sha256"`
+	FileCount int    `json:"file_count"` // zip or tar
 }
 
 func (c *PresignController) handleCreateZip(msg *nats.Msg) {
@@ -194,6 +203,7 @@ func (c *PresignController) handleCreateZip(msg *nats.Msg) {
 		reply(msg, CreateDefaultBucketResponse{Error: "invalid payload"})
 		return
 	}
+
 	// ensure the bucket exists,
 	bucket, err := c.bucketService.GetBucketByID(ctx, event.BucketID)
 
@@ -241,16 +251,10 @@ func (c *PresignController) handleCreateZip(msg *nats.Msg) {
 		BucketID:  event.BucketID,
 		FileCount: archiveOutput.FileCount,
 		URL:       presignURL,
+		Sha256:    archiveOutput.Checksum,
 	})
 
-	// log.Printf("[S3] Archive created %s...", archiveOutput.Checksum)
-
-	// log.Printf("[S3] Bucket ready: %s", event.BucketName)
-	// reply(msg, ArchiveByPrefixUrl{
-	// 	BucketID:   id,
-	// 	BucketName: event.BucketName,
-	// 	Created:    true,
-	// })
+ 
 }
 
 func (c *PresignController) handleDefaultBucketSubj(msg *nats.Msg) {
@@ -396,6 +400,13 @@ func (c *PresignController) ensureDefaultBucket(ctx context.Context, bucketName 
 	return newBucket.BucketID, nil
 }
 
+//	type ArchiveByPrefixInputMessage struct {
+//	    BucketID    string `json:"bucket_id"`
+//	    Prefix      string `json:"prefix" binding:"required"`
+//	    ArchiveName string `json:"archive_name" binding:"required"`
+//	    Format      string `json:"format"` // zip or tar
+//	    UserID      string `json:"user_id"`
+//	}
 func (c *PresignController) handleCreatePresignedURL(msg *nats.Msg) {
 	var req createPresignedURLRequest
 	if err := json.Unmarshal(msg.Data, &req); err != nil {
@@ -404,7 +415,7 @@ func (c *PresignController) handleCreatePresignedURL(msg *nats.Msg) {
 		return
 	}
 
-	log.Printf("[S3] Presigned URL requested — AssetType: %s, AssetID: %s, User: %s", req.AssetType, req.AssetID, req.UserID)
+	log.Printf("[S3] Presigned URL requested — AssetType: %s, AssetID: %s, User: %s, --: %s", req.AssetType, req.AssetID, req.UserID, req.Sha256)
 
 	// create a url for this files with a sha256,fromthis user id, and this is its assetid,
 
@@ -417,6 +428,7 @@ func (c *PresignController) handleCreatePresignedURL(msg *nats.Msg) {
 	}
 
 	bucketName, key, err := resolveAssetBucket(req)
+
 	if err != nil {
 		log.Printf("[S3] Invalid request: %v", err)
 		c.respondWithError(msg, err.Error())
@@ -464,13 +476,6 @@ func (c *PresignController) handleCreatePresignedURL(msg *nats.Msg) {
 
 type AssetType string
 
-const (
-	AssetTypeGame     AssetType = "game"
-	AssetTypeTemplate AssetType = "template"
-	AssetTypeAgent    AssetType = "agent"
-	AssetTypeScript   AssetType = "script"
-)
-
 type createPresignedURLRequest struct {
 	UserID     string    `json:"user_id"`
 	GameID     string    `json:"game_id,omitempty"`
@@ -494,6 +499,8 @@ type createPresignedURLRequest struct {
 func resolveAssetBucket(req createPresignedURLRequest) (name, key string, err error) {
 	// support legacy callers still sending game_id
 	assetID := req.AssetID
+	assetType := req.AssetType
+
 	if assetID == "" {
 		assetID = req.GameID
 	}
@@ -501,7 +508,14 @@ func resolveAssetBucket(req createPresignedURLRequest) (name, key string, err er
 		return "", "", fmt.Errorf("asset_id (or game_id) is required")
 	}
 
-	switch req.AssetType {
+	switch assetType {
+	case AssetTypeLambda:
+
+	}
+	switch assetType {
+	case AssetTypeLambda:
+		return DefaultLambdaBucket, fmt.Sprintf("functions/%s", assetID), nil
+
 	case AssetTypeTemplate:
 		return DefaultTemplateBucket, fmt.Sprintf("templates/%s/disk", assetID), nil
 
@@ -520,6 +534,29 @@ func resolveAssetBucket(req createPresignedURLRequest) (name, key string, err er
 	}
 }
 
+type PresignNatsError struct {
+	Message string `jsom:"message"`
+	Code    int    `json:"code"`
+}
+
+func reportError(data PresignNatsError, req createPresignDownloadURLRequest, msg *nats.Msg) {
+	// 3. Respond
+
+	respData, err := json.Marshal(data)
+	if err != nil {
+		log.Printf("[S3] PRESIGN_DOWNLOAD_MARSHAL_FAILED")
+		return
+	}
+	if err := msg.Respond(respData); err != nil {
+		log.Printf("[S3] PRESIGN_DOWNLOAD_RESPOND_FAILED",
+			"user_id", req.UserID,
+			"correlation_id", req.CorrelationID,
+			"error", err,
+		)
+		return
+	}
+
+}
 func (c *PresignController) handleCreatePresignDownloadURL(msg *nats.Msg) {
 	var req createPresignDownloadURLRequest
 	if err := json.Unmarshal(msg.Data, &req); err != nil {
@@ -536,11 +573,27 @@ func (c *PresignController) handleCreatePresignDownloadURL(msg *nats.Msg) {
 	files, err := c.fileRepo.GetFilesBySHA256(ctx, req.FileSha256)
 	if err != nil {
 		log.Printf("[S3] PRESIGN_DOWNLOAD_FILE_LOOKUP_FAILED user_id %s asset_id %s correlation_id %s sha256 %s error %s", req.UserID, req.AssetID, req.CorrelationID, req.FileSha256, err)
+		reportError(
+			PresignNatsError{
+				Message: "File was not found by sha256",
+				Code:    500,
+			},
+
+			req, msg,
+		)
 		return
 	}
 
 	if len(files) == 0 {
 		log.Printf("[S3] PRESIGN_DOWNLOAD_FILE_NOT_FOUND user_id %s asset_id %s correlation_id %s sha256 %s", req.UserID, req.AssetID, req.CorrelationID, req.FileSha256)
+		reportError(
+			PresignNatsError{
+				Message: "it got o files ",
+				Code:    500,
+			},
+
+			req, msg,
+		)
 		return
 	}
 

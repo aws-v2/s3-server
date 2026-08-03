@@ -1,10 +1,12 @@
 package http
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"s3/internal/application"
 	"s3/internal/domain"
+	"s3/internal/utils"
 
 	"github.com/gin-gonic/gin"
 )
@@ -27,33 +29,19 @@ type APIResponse struct {
 }
 
 func (h *MetricsHandler) HandleHeartbeat(c *gin.Context) {
+	requestID := c.GetString("requestId")
 	var req domain.HeartbeatRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		// Log the specific unmarshaling error to the console
-		log.Printf("[host-handler] Heartbeat bind error: %v", err)
-
-		c.JSON(http.StatusBadRequest, APIResponse{
-			Code:    http.StatusBadRequest,
-			Message: "Invalid request body: " + err.Error(),
-		})
-
+		log.Printf("[Handler:HandleHeartbeat] Bad request, requestID %s error %s", requestID, err.Error())
+		utils.RespondError(c, http.StatusBadRequest, fmt.Errorf("invalid request body"))
 		return
 	}
 
 	resp, err := h.metricsService.HandleHeartbeat(req, c)
 	if err != nil {
-		log.Printf("[host-handler] Heartbeat service error: %v", err)
-
-		c.JSON(http.StatusBadRequest, APIResponse{
-			Code:    http.StatusInternalServerError,
-			Message: err.Error(),
-		})
-
+		log.Printf("[Handler:HandleHeartbeat] Service call, requestID %s error %s", requestID, err.Error())
+		utils.RespondError(c, http.StatusInternalServerError, fmt.Errorf("failed to process heartbeat"))
 		return
 	}
-	c.JSON(http.StatusOK, APIResponse{
-		Code:    http.StatusOK,
-		Message: "Heartbeat recorded",
-		Data:    resp,
-	})
+	utils.RespondSucces(c, http.StatusOK, "Heartbeat recorded", resp)
 }

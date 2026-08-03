@@ -85,8 +85,7 @@ func (s *BucketService) CreateBucket(ctx context.Context, input dto.CreateBucket
 		})
 	}
 
-log.Printf("DEBUG: OwnerId=%q, BucketName=%q", input.OwnerId, input.Name)
-
+	log.Printf("DEBUG: OwnerId=%q, BucketName=%q", input.OwnerId, input.Name)
 
 	arn := fmt.Sprintf("arn:serw:s3:%s:%s:bucket/%s", input.Region, input.OwnerId, input.Name)
 
@@ -110,11 +109,11 @@ log.Printf("DEBUG: OwnerId=%q, BucketName=%q", input.OwnerId, input.Name)
 			Type:             input.Encryption.Type,
 			BucketKeyEnabled: input.Encryption.BucketKeyEnabled,
 		},
-		ObjectLock:  input.ObjectLock,
-		StorageName: storageName,
+		ObjectLock:    input.ObjectLock,
+		StorageName:   storageName,
 		StorageHostID: storageHostID,
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
+		CreatedAt:     time.Now(),
+		UpdatedAt:     time.Now(),
 	}
 	// Save metadata in repository
 	bucketObject, err := s.bucketRepo.SaveBucket(ctx, bucket)
@@ -199,12 +198,7 @@ func (s *BucketService) GetBucketRepository() domain.BucketRepository {
 	return s.bucketRepo
 }
 
-type ListBucketFiles struct{
-	BucketName string `json:"bucketname"`
-	FileMetadata []domain.File `json:"FileMetadata"`
-}
-
-func (s *BucketService) ListBucketFiles(ctx context.Context, bucketID string) (*ListBucketFiles, error) {
+func (s *BucketService) ListBucketFiles(ctx context.Context, bucketID string) (*domain.ListBucketFiles, error) {
 	actor, _ := ctx.Value("actor").(domain.Actor)
 	filterID := actor.ID
 	if IsAdmin(actor.ID) {
@@ -213,7 +207,7 @@ func (s *BucketService) ListBucketFiles(ctx context.Context, bucketID string) (*
 
 	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
 
-	metadata,err := s.fileRepo.ListFiles(ctx, bucket.ID)
+	metadata, err := s.fileRepo.ListFiles(ctx, bucket.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -223,13 +217,62 @@ func (s *BucketService) ListBucketFiles(ctx context.Context, bucketID string) (*
 		HeadRequests: 1,
 	})
 
-	return &ListBucketFiles{
-		BucketName:bucket.Name,
+	return &domain.ListBucketFiles{
+		BucketName:   bucket.Name,
 		FileMetadata: metadata,
 	}, nil
 }
 
-func (s *BucketService) GetBucket(ctx context.Context, bucketID string) (*dto.GetBucketOutput, error) {
+type folderNode struct {
+	folder   *domain.Folder
+	children map[string]*folderNode
+}
+
+// func buildBucketTree(files []domain.File) domain.BucketRoot {
+// 	rootChildren := map[string]*folderNode{}
+// 	rootFiles := []domain.File{}
+
+// 	for _, f := range files {
+// 		trimmed := strings.Trim(f.Key, "/")
+// 		if trimmed == "" {
+// 			continue
+// 		}
+// 		parts := strings.Split(trimmed, "/")
+
+// 		if len(parts) == 1 {
+// 			rootFiles = append(rootFiles, f)
+// 			continue
+// 		}
+
+// 		currentMap := rootChildren
+// 		var currentNode *folderNode
+
+// 		for i := 0; i < len(parts)-1; i++ {
+// 			name := parts[i]
+// 			node, ok := currentMap[name]
+// 			if !ok {
+// 				node = &folderNode{
+// 					folder:   &domain.Folder{Name: name},
+// 					children: map[string]*folderNode{},
+// 				}
+// 				currentMap[name] = node
+// 			}
+// 			node.folder.Size += f.Size
+// 			currentNode = node
+// 			currentMap = node.children
+// 		}
+
+// 		currentNode.folder.Files = append(currentNode.folder.Files, f)
+// 	}
+
+// var convert func(m map[string]*folderNode) []*dto.Folder
+// convert = func(m map[string]*folderNode
+
+// return domain.BucketRoot{}
+
+// }
+
+func (s *BucketService) GetBucket(ctx context.Context, bucketID string) (*domain.BucketInfoResponse, error) {
 	actor, _ := ctx.Value("actor").(domain.Actor)
 	filterID := actor.ID
 	if IsAdmin(actor.ID) {
@@ -245,26 +288,62 @@ func (s *BucketService) GetBucket(ctx context.Context, bucketID string) (*dto.Ge
 	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
 		HeadRequests: 1,
 	})
+	var dummyFolders []*domain.Folder
+	var dummyfiels []*domain.File
 
-	return &dto.GetBucketOutput{
-		BucketID:   bucket.ID,
-		Name:       bucket.Name,
-		ARN:        bucket.ARN,
-		CreatedAt:  bucket.CreatedAt,
-		BucketType: bucket.BucketType,
-		Region:     bucket.Region,
+	dummyFolder := domain.Folder{
+		Name: "Documents",
+		Size: 200,
+	}
+
+	dummyFile := &domain.File{
+		ID:       "fe3bd449-6b6e-4381-8498-3ec8f46bad94",
+		Key:     "gadot.x86_64",
+		BucketID: bucket.ID,
+	}
+
+	dummyFolders = append(dummyFolders, &dummyFolder)
+	dummyfiels = append(dummyfiels, dummyFile)
+
+	rootFiles := []*domain.File{
+		dummyFile,
+	}
+	rootFolders := []*domain.Folder{
+		{
+			Name:    "root",
+			Size:    100,
+			Files:   dummyfiels,
+			Folders: dummyFolders,
+		},
+	}
+	return &domain.BucketInfoResponse{
+		BucketInfo: domain.BucketInfo{
+			TotalFolderCount:   26,
+			CurrentUtilization: 91,
+			BucketID:           bucket.ID,
+			BucketName:         bucket.Name,
+			ARN:                bucket.ARN,
+			Region:             bucket.Region,
+			BucketType:         bucket.BucketType,
+			CreatedAt:          bucket.CreatedAt,
+			TotalSize:          7890,
+			TotalFileCount:     2,
+		},
+		Root: domain.BucketRoot{
+			Files:   rootFiles,
+			Folders: rootFolders,
+		},
 	}, nil
 }
 
+// }
 func (s *BucketService) ListBuckets(ctx context.Context, userId string) ([]domain.Bucket, error) {
 	filterID := userId
 	if IsAdmin(userId) {
 		filterID = ""
 	}
 
-
-fmt.Println("the filter id is: ", filterID)
-
+	fmt.Println("the filter id is: ", filterID)
 
 	buckets, err := s.bucketRepo.ListBuckets(ctx, filterID)
 	if err == nil {
@@ -522,7 +601,6 @@ func (s *BucketService) SetBucketVersioning(ctx context.Context, bucketID string
 	return nil
 }
 
- 
 func (s *BucketService) GetBucketVersioning(ctx context.Context, bucketID string) (*dto.VersioningOutput, error) {
 	actor, _ := ctx.Value("actor").(domain.Actor)
 	filterID := actor.ID

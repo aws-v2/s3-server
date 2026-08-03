@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -33,6 +34,44 @@ func NewPrefixService(bucketRepo domain.BucketRepository, fileRepo domain.FileRe
 		storage:    storage,
 		metrics:    metrics,
 	}
+}
+
+func (s *PrefixService) CreatePrefix(ctx context.Context, input dto.CreatePrefixInput) error {
+	ErrNotFound := errors.New("record not found*")
+
+	// check if bucket already exist
+
+	_, err := s.bucketRepo.GetBucketByID(ctx, input.BucketId, input.FildterId)
+	if err != nil {
+		return fmt.Errorf("bucket not found: %w", err)
+	}
+
+	// check if the prefix/folder already exists,
+	_, erre := s.bucketRepo.GetPrefixByName(ctx, input.BucketId, input.FildterId)
+	// get prefix name and parent id,
+
+	if erre != nil {
+		if errors.Is(err, ErrNotFound) {
+
+			_, errer := s.bucketRepo.CreatePrefix(ctx, input.BucketId, input.FildterId)
+			if errer != nil {
+				return fmt.Errorf("Issues persisting prefix records on the db : %w", err)
+			}
+			return nil
+
+		}
+		return fmt.Errorf("fSome other error : %w", err)
+	}
+	return fmt.Errorf("folderName already exist on this level not found: %w", err)
+
+}
+func (s *PrefixService) PrefixContent(ctx context.Context, bucketId, folderID string) (*domain.BucketRoot, error) {
+
+	//get the files whose folder_id==
+	//get the folder whose folder_id==
+
+	return &domain.BucketRoot{},nil
+
 }
 
 // ListByPrefix lists files by prefix
@@ -259,7 +298,6 @@ func (s *PrefixService) CountByPrefix(ctx context.Context, input dto.CountByPref
 	}, nil
 }
 
-
 func sha256File(file multipart.File) (string, error) {
 	h := sha256.New()
 	if _, err := io.Copy(h, file); err != nil {
@@ -270,45 +308,35 @@ func sha256File(file multipart.File) (string, error) {
 
 // ArchiveByPrefix archives files by prefix
 func (s *PrefixService) ArchiveByPrefix(ctx context.Context, input dto.ArchiveByPrefixInput) (*dto.ArchiveByPrefixOutput, error) {
-	
-	
-	
-	
+
 	filterID := input.UserID
 	if IsAdmin(filterID) {
 		filterID = ""
 	}
 
-
-
-
-
-
-	log.Printf("The bucket with the id %s",input.BucketID)
-	log.Printf("The bucket with the filterID id %s",filterID)
+	log.Printf("The bucket with the id %s", input.BucketID)
+	log.Printf("The bucket with the filterID id %s", filterID)
 
 	bucket, err := s.bucketRepo.GetBucketByID(ctx, input.BucketID, filterID)
 	if err != nil {
 		return nil, fmt.Errorf("bucket not found: %w", err)
 	}
-	log.Printf("The bucket has been found  id %s",bucket.ID)
-	log.Printf("The prefix has been found  id %s",input.Prefix)
-
+	log.Printf("The bucket has been found  id %s", bucket.ID)
+	log.Printf("The prefix has been found  id %s", input.Prefix)
 
 	files, err := s.fileRepo.ListFilesByPrefix(ctx, input.BucketID, input.Prefix, 0)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list files: %w", err)
 	}
-	log.Printf("The fiels has been found  id %d",len(files))
+	log.Printf("The fiels has been found  id %d", len(files))
 
 	if len(files) == 0 {
 		return nil, fmt.Errorf("no files found with prefix: %s", input.Prefix)
 	}
-	log.Printf("The fiels has *been found  id %d",len(files))
-
+	log.Printf("The fiels has *been found  id %d", len(files))
 
 	format := input.Format
-	checksum:=""
+	checksum := ""
 	if format == "" {
 		format = "zip"
 	}
@@ -318,11 +346,10 @@ func (s *PrefixService) ArchiveByPrefix(ctx context.Context, input dto.ArchiveBy
 
 	switch format {
 	case "zip":
-		archiveData, checksum,archiveErr = s.createZipArchive(ctx, bucket.StorageName, files)
+		archiveData, checksum, _, archiveErr = s.createZipArchive(ctx, bucket.StorageName, files)
 	default:
 		return nil, fmt.Errorf("unsupported archive format: %s", format)
 	}
-
 
 	if archiveErr != nil {
 		return nil, fmt.Errorf("failed to create archive: %w", archiveErr)
@@ -343,7 +370,7 @@ func (s *PrefixService) ArchiveByPrefix(ctx context.Context, input dto.ArchiveBy
 	archiveFile := domain.File{
 		ID:          uuid.New().String(),
 		BucketID:    input.BucketID,
-		SHA256: checksum,
+		SHA256:      checksum,
 		Key:         input.Prefix,
 		Size:        int64(len(archiveData)),
 		ContentType: "application/zip",
@@ -369,12 +396,11 @@ func (s *PrefixService) ArchiveByPrefix(ctx context.Context, input dto.ArchiveBy
 		ArchiveKey:  archiveKey,
 		FileCount:   len(files),
 		ArchiveSize: int64(len(archiveData)),
-		Checksum:checksum,
-		FileID:archiveFile.ID,
+		Checksum:    checksum,
+		FileID:      archiveFile.ID,
 	}, nil
 }
-
-func (s *PrefixService) createZipArchive(ctx context.Context, bucketName string, files []domain.File) ([]byte, string, error) {
+func (s *PrefixService) createZipArchive(ctx context.Context, bucketName string, files []domain.File) ([]byte, string, string, error) {
 	buf := new(bytes.Buffer)
 	zipWriter := zip.NewWriter(buf)
 
@@ -395,22 +421,68 @@ func (s *PrefixService) createZipArchive(ctx context.Context, bucketName string,
 	}
 
 	if err := zipWriter.Close(); err != nil {
-		return nil, "", err
+		return nil, "", "", fmt.Errorf("close zip writer: %w", err)
 	}
 
 	zipBytes := buf.Bytes()
 
-	// SHA256 of the final zip
-	h := sha256.New()
-	if _, err := io.Copy(h, bytes.NewReader(zipBytes)); err != nil {
-		return nil, "", fmt.Errorf("hash archive: %w", err)
-	}
-	checksum := hex.EncodeToString(h.Sum(nil))
+	checksum := CalculateSHA256Bytes(zipBytes)
 
-	return zipBytes, checksum, nil
+	// Save the zip back into the same bucket under a unique key
+	zipKey := fmt.Sprintf("exports/%s-%d.zip", uuid.New().String(), time.Now().Unix())
+
+	// metadata := map[string]string{
+	// 	"sha256": checksum,
+	// }
+
+	// if err := s.storage.SaveObject(ctx, bucketName, zipKey, zipBytes, metadata); err != nil {
+	// 	return nil, "", "", fmt.Errorf("save zip archive: %w", err)
+	// }
+
+	return zipBytes, checksum, zipKey, nil
 }
 
+// CalculateSHA256Bytes calculates the SHA256 hash of the byte slice.
+func CalculateSHA256Bytes(data []byte) string {
+	hash := sha256.Sum256(data)
+	return hex.EncodeToString(hash[:])
+}
 
+// func (s *PrefixService) createZipArchive(ctx context.Context, bucketName string, files []domain.File) ([]byte, string, error) {
+// 	buf := new(bytes.Buffer)
+// 	zipWriter := zip.NewWriter(buf)
+
+// 	for _, file := range files {
+// 		data, err := s.storage.GetObject(ctx, bucketName, file.Key)
+// 		if err != nil {
+// 			continue
+// 		}
+
+// 		writer, err := zipWriter.Create(file.Key)
+// 		if err != nil {
+// 			continue
+// 		}
+
+// 		if _, err := writer.Write(data); err != nil {
+// 			continue
+// 		}
+// 	}
+
+// 	if err := zipWriter.Close(); err != nil {
+// 		return nil, "", err
+// 	}
+
+// 	zipBytes := buf.Bytes()
+
+// 	// SHA256 of the final zip
+// 	h := sha256.New()
+// 	if _, err := io.Copy(h, bytes.NewReader(zipBytes)); err != nil {
+// 		return nil, "", fmt.Errorf("hash archive: %w", err)
+// 	}
+// 	checksum := hex.EncodeToString(h.Sum(nil))
+
+// 	return zipBytes, checksum, nil
+// }
 
 func (s *PrefixService) emitMetrics(ctx context.Context, bucketID, ownerID, region string, partial dto.S3IngestRequest) {
 	if s.metrics == nil {

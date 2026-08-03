@@ -168,7 +168,7 @@ func (n *NATSAdapter) PublishEvent(ctx context.Context, event Event) error {
 }
 
 // PublishFileEvent publishes a file-related event
-func (n *NATSAdapter) PublishFileEvent(ctx context.Context, eventType, bucketID, fileID, key string, metadata map[string]interface{}) error {
+func (n *NATSAdapter) PublishFileEvent(ctx context.Context, eventType, bucketID, fileID, key string, metadata interface{}) error {
 	event := Event{
 		Type:      eventType,
 		Source:    "s3-service",
@@ -181,7 +181,7 @@ func (n *NATSAdapter) PublishFileEvent(ctx context.Context, eventType, bucketID,
 		},
 	}
 
-	topic := n.BuildSubject("v1", "files", eventType)
+	topic := fmt.Sprintf("%s.metrics.raw.logs",n.natsPrefix)
 	return n.Publish(ctx, topic, event)
 }
 
@@ -257,8 +257,8 @@ func (n *NATSAdapter) GetConnection() *nats.Conn {
 }
 
 type instanceTokenRequest struct {
-	InstanceID string `json:"instance_id"`
-	UserID     string `json:"user_id"`
+	InstanceID string `json:"instanceID"`
+	UserID     string `json:"userID"`
 	Payload    string `json:"payload"` // base64url-encoded presigned URL payload
 }
 

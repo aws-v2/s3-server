@@ -35,6 +35,7 @@ type DatabaseConfig struct {
 	Port            int
 	User            string
 	Password        string
+	ChannelBinding string
 	Database        string
 	SSLMode         string
 	MaxOpenConns    int
@@ -95,6 +96,7 @@ func Load() (*Config, error) {
 			MaxIdleConns:    utilsCfg.DB.MaxIdleConns,
 			ConnMaxLifetime: utilsCfg.DB.ConnMaxLifetime,
 			ConnMaxIdleTime: utilsCfg.DB.ConnMaxIdleTime,
+			ChannelBinding: utilsCfg.DB.ChannelBinding,
 		},
 		NATS: NATSConfig{
 			URL:      utilsCfg.NATS.URL,

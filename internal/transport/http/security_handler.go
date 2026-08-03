@@ -1,9 +1,12 @@
 package http
 
 import (
+	"fmt"
+	"log"
 	"net/http"
 	"s3/internal/application"
 	"s3/internal/domain"
+	"s3/internal/utils"
 
 	"github.com/gin-gonic/gin"
 )
@@ -19,17 +22,20 @@ func NewSecurityHandler(securityService *application.SecurityService) *SecurityH
 }
 
 func (h *SecurityHandler) GetSecuritySummary(c *gin.Context) {
+	requestID := c.GetString("requestId")
 	actor, ok := c.Request.Context().Value("actor").(domain.Actor)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		log.Printf("[Handler:GetSecuritySummary] Unauthorized, requestID %s", requestID)
+		utils.RespondError(c, http.StatusUnauthorized, fmt.Errorf("unauthorized access"))
 		return
 	}
 
 	summary, err := h.securityService.AnalyzePosture(c.Request.Context(), actor.ID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		log.Printf("[Handler:GetSecuritySummary] Service call, requestID %s error %s", requestID, err.Error())
+		utils.RespondError(c, http.StatusInternalServerError, fmt.Errorf("failed to analyze security posture"))
 		return
 	}
 
-	c.JSON(http.StatusOK, summary)
+	utils.RespondSucces(c, http.StatusOK, "security summary retrieved successfully", summary)
 }

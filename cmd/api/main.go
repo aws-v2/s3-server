@@ -7,8 +7,8 @@ import (
 	"os"
 	"s3/internal/application"
 
-	"s3/internal/infrastructure/config"
 	"s3/database"
+	"s3/internal/infrastructure/config"
 	"s3/internal/infrastructure/event"
 	"s3/internal/infrastructure/logging"
 	"s3/internal/infrastructure/metrics"
@@ -164,10 +164,13 @@ func main() {
 
 	// Pre-requisite reachability checks
 	slog.Info("Performing reachability checks...")
-	
+
 	if err := network.CheckReachability(cfg.NATS.Host, cfg.NATS.Port, 5, 2*time.Second); err != nil {
 		slog.Error("FATAL: NATS unreachable", slog.Any("error", err), slog.String("host", cfg.NATS.Host), slog.Int("port", cfg.NATS.Port))
-		os.Exit(1)
+		slog.Error("Pressing on without it ")
+		// TODO: uncomment the os.Exit(1), since am deploying to rneder
+		// i ahvent configured it yetto look at a vps for nat so...
+		// os.Exit(1)
 	}
 
 	if err := network.CheckReachability(cfg.Database.Host, cfg.Database.Port, 5, 2*time.Second); err != nil {
@@ -177,7 +180,7 @@ func main() {
 
 	// Initialize NATS connection FIRST for IAM integration
 	slog.Info("Connecting to NATS...", slog.String("url", cfg.NATS.URL))
-	natsAdapter, err := event.NewNATSAdapter(cfg.NATS.URL, cfg.NATS.User, cfg.NATS.Password, cfg.APP_PROFILE,cfg.NATS.NatsPrefix)
+	natsAdapter, err := event.NewNATSAdapter(cfg.NATS.URL, cfg.NATS.User, cfg.NATS.Password, cfg.APP_PROFILE, cfg.NATS.NatsPrefix)
 	if err != nil {
 		slog.Error("Failed to connect to NATS", slog.Any("error", err))
 		os.Exit(1)
@@ -191,13 +194,14 @@ func main() {
 		Password:        cfg.Database.Password,
 		Database:        cfg.Database.Database,
 		SSLMode:         cfg.Database.SSLMode,
+		ChannelBinding:  cfg.Database.ChannelBinding,
 		MaxOpenConns:    cfg.Database.MaxOpenConns,
 		MaxIdleConns:    cfg.Database.MaxIdleConns,
 		ConnMaxLifetime: cfg.Database.ConnMaxLifetime,
 		ConnMaxIdleTime: cfg.Database.ConnMaxIdleTime,
 	}
 
-	fmt.Printf("Connecting to postgres database", dbConfig.Database)
+	fmt.Printf("Connecting to postgres database: %s\n", dbConfig.Database)
 	db, err := database.NewPostgresDB(dbConfig)
 	if err != nil {
 		slog.Error("Failed to connect to database", slog.Any("error", err))
@@ -210,7 +214,7 @@ func main() {
 	// Create IAM validator
 
 	// Run migrations
-	slog.Info("Running database migrations---...",slog.String("url", dbConfig.Host))
+	slog.Info("Running database migrations---...", slog.String("url", dbConfig.Host))
 	version, dirty, err := database.GetMigrationVersion(db, dbConfig.Database)
 	if err == nil && dirty {
 		slog.Warn("Database is dirty, forcing version", slog.Uint64("version", uint64(version)))
@@ -235,7 +239,7 @@ func main() {
 	// }
 
 	sys := &system.System{} // note pointer, so methods can be called
-	metricsRepo := repository.NewMetricsRepo(db,logging.Logger)
+	metricsRepo := repository.NewMetricsRepo(db, logging.Logger)
 	hostScheduler := application.NewHostScheduler(postgresRepo)
 
 	slog.Info("Initializing MinIO adapter...")
@@ -258,7 +262,7 @@ func main() {
 
 	// 2. Initialize Application Layer (Services)
 	slog.Info("Initializing services...")
-	presignedService := application.NewPresignService(postgresRepo, postgresRepo, postgresRepo, postgresRepo, minioAdapter, metricsClient, cfg.S3.SecretKey,natsAdapter, cfg)
+	presignedService := application.NewPresignService(postgresRepo, postgresRepo, postgresRepo, postgresRepo, minioAdapter, metricsClient, cfg.S3.SecretKey, natsAdapter, cfg)
 	uploadService := application.NewUploadService(minioAdapter, postgresRepo, postgresRepo, metricsClient, natsAdapter, presignedService)
 	bucketService := application.NewBucketService(postgresRepo, postgresRepo, postgresRepo, minioAdapter, metricsClient)
 	deleteService := application.NewDeleteService(minioAdapter, postgresRepo, postgresRepo, metricsClient)
@@ -277,26 +281,26 @@ func main() {
 	// 3. Initialize Transport Layer (HTTP)
 	slog.Info("Initializing HTTP handlers...")
 	handlers := &http.Handlers{
-		File:        http.NewFileHandler(uploadService, deleteService,cfg.S3.SecretKey),
-		Bucket:      http.NewBucketHandler(bucketService),
-		Health:      http.NewHealthHandler(healthService),
-		Presign:     http.NewPresignHandler(presignedService, uploadService),
-		Batch:       http.NewBatchHandler(batchService),         
-		Prefix:      http.NewPrefixHandler(prefixService),       
-		Search:      http.NewSearchHandler(SearchService),       
-		Webhook:     http.NewWebhookHandler(webhookService),     
-		Analytics:   http.NewAnalyticsHandler(analyticsService), 
-		Multipart:   http.NewMultipartHandler(multipartService), 
-		AccessPoint: http.NewAccessPointHandler(accessPointService),
-		Security:    http.NewSecurityHandler(securityService),
-		JWTValidator: nil,        
-		Docs:        http.NewDocsHandler(docsService),  
-		Metrics:        http.NewMetricsHandler(&metricsService),  
+		File:         http.NewFileHandler(uploadService, deleteService, cfg.S3.SecretKey),
+		Bucket:       http.NewBucketHandler(bucketService),
+		Health:       http.NewHealthHandler(healthService),
+		Presign:      http.NewPresignHandler(presignedService, uploadService),
+		Batch:        http.NewBatchHandler(batchService),
+		Prefix:       http.NewPrefixHandler(prefixService),
+		Search:       http.NewSearchHandler(SearchService),
+		Webhook:      http.NewWebhookHandler(webhookService),
+		Analytics:    http.NewAnalyticsHandler(analyticsService),
+		Multipart:    http.NewMultipartHandler(multipartService),
+		AccessPoint:  http.NewAccessPointHandler(accessPointService),
+		Security:     http.NewSecurityHandler(securityService),
+		JWTValidator: nil,
+		Docs:         http.NewDocsHandler(docsService),
+		Metrics:      http.NewMetricsHandler(&metricsService),
 	}
-	
+
 	// Initialize and start NATS controllers
 	slog.Info("Initializing NATS controllers...")
-	presignController := nats.NewPresignController(natsAdapter.GetConnection(), presignedService, prefixService,bucketService, postgresRepo, cfg.NATS.NatsPrefix, cfg.S3.DefaultBuckets, cfg.S3.SecretKey, postgresRepo, )
+	presignController := nats.NewPresignController(natsAdapter.GetConnection(), presignedService, prefixService, bucketService, postgresRepo, cfg.NATS.NatsPrefix, cfg.S3.DefaultBuckets, cfg.S3.SecretKey, postgresRepo)
 	if err := presignController.Start(); err != nil {
 		slog.Warn("Failed to start NATS presign controller", slog.Any("error", err))
 	}
@@ -307,7 +311,7 @@ func main() {
 
 	// 5. Start Server
 	slog.Info("Server starting", slog.String("port", cfg.ServerPort))
-	slog.Info("Routes initialized", 
+	slog.Info("Routes initialized",
 		slog.String("upload", "/api/v1/buckets/:bucketId/files"),
 		slog.String("health", "/health"))
 
@@ -324,10 +328,10 @@ func monitorDBStats(db *sql.DB) {
 
 	for range ticker.C {
 		stats := db.Stats()
-		slog.Info("DB Pool Stats", 
-			slog.Int("open", stats.OpenConnections), 
-			slog.Int("in_use", stats.InUse), 
-			slog.Int("idle", stats.Idle), 
+		slog.Info("DB Pool Stats",
+			slog.Int("open", stats.OpenConnections),
+			slog.Int("in_use", stats.InUse),
+			slog.Int("idle", stats.Idle),
 			slog.Int("wait_count", int(stats.WaitCount)))
 	}
 }

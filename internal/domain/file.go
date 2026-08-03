@@ -17,6 +17,23 @@ type File struct {
 	UpdatedAt    time.Time         `gorm:"autoUpdateTime"`
 }
 
+
+
+type FileDto struct {
+	ID           string            `gorm:"primaryKey"`
+	BucketID     string            `gorm:"not null"`
+	Key          string            `gorm:"not null;unique"`
+	Size         int64             `gorm:"not null"`
+	Version      string            `gorm:"version:255"`
+	MimeType     string            `gorm:"size:255"`
+	ContentType  string            `gorm:"size:255"`
+	StorageClass string            `gorm:"size:50;default:'STANDARD'"`
+	SHA256       string            `gorm:"size:64;default:'not_calculated_yet'"`
+	Metadata     map[string]string `gorm:"type:jsonb"` // use "json" if MySQL
+	CreatedAt    time.Time         `gorm:"autoCreateTime"`
+	UpdatedAt    time.Time         `gorm:"autoUpdateTime"`
+}
+
 func (f *File) IsImage() bool {
 	return f.MimeType == "image/png" || f.MimeType == "image/jpeg"
 }

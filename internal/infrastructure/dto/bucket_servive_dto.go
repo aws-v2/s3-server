@@ -20,6 +20,7 @@ type GetBucketOutput struct {
 	CreatedAt  time.Time `json:"created_at"`
 	Region     string    `json:"region"`
 	BucketType string    `json:"bucket_type"`
+	BucketContent *domain.ListBucketFiles
 }
 
 type UpdateBucketInput struct {

@@ -36,6 +36,7 @@ type DBConfig struct {
 	MaxIdleConns    int
 	ConnMaxLifetime time.Duration
 	ConnMaxIdleTime time.Duration
+	ChannelBinding string
 }
 
 type S3Config struct {
@@ -82,7 +83,46 @@ func Load() (*Config, error) {
 			MaxIdleConns:    getEnvInt("DB_MAX_IDLE_CONNS", 5),
 			ConnMaxLifetime: getEnvDuration("DB_CONN_MAX_LIFETIME", 5*time.Minute),
 			ConnMaxIdleTime: getEnvDuration("DB_CONN_MAX_IDLE_TIME", 10*time.Minute),
+			ChannelBinding: getEnv("DB_CHANNEL_BINDING", ""),
 		},
+
+
+
+
+
+
+	// cfg := &Config{
+	// 	DB: DBConfig{
+	// 		Host:            getEnv("POSTGRES_HOST", "ep-purple-feather-aypga34j-pooler.c-5.us-east-2.aws.neon.tech"),
+	// 		Port:            getEnvInt("POSTGRES_PORT", 5432),
+	// 		User:            getEnv("POSTGRES_USER", "neondb_owner"),
+	// 		Password:        getEnv("POSTGRES_PASSWORD", "npg_EHvDpaNKS73u"),
+	// 		Database:        getEnv("POSTGRES_DB", "s3_db"),
+	// 		SSLMode:         getEnv("POSTGRES_SSL_MODE", "disable"),
+	// 		MaxOpenConns:    getEnvInt("DB_MAX_OPEN_CONNS", 25),
+	// 		MaxIdleConns:    getEnvInt("DB_MAX_IDLE_CONNS", 5),
+	// 		ConnMaxLifetime: getEnvDuration("DB_CONN_MAX_LIFETIME", 5*time.Minute),
+	// 		ConnMaxIdleTime: getEnvDuration("DB_CONN_MAX_IDLE_TIME", 10*time.Minute),
+	// 		ChannelBinding: getEnv("DB_CHANNEL_BINDING", ""),
+	// 	},
+//POSTGRES_HOST=ep-purple-feather-aypga34j-pooler.c-5.us-east-2.aws.neon.tech
+// POSTGRES_PORT=5432
+// POSTGRES_USER=neondb_owner
+// POSTGRES_PASSWORD=npg_EHvDpaNKS73u
+// POSTGRES_DB=s3_db
+// POSTGRES_SSL_MODE=require
+// DB_CHANNEL_BINDING=require
+// DB_MAX_OPEN_CONNS=25
+// DB_MAX_IDLE_CONNS=5
+// DB_CONN_MAX_LIFETIME=5m
+// DB_CONN_MAX_IDLE_TIME=10m
+
+
+
+
+
+
+
 		S3: S3Config{
 			Endpoint:  minioEndpoint,
 			AccessKey: getEnv("MINIO_ACCESS_KEY", "minioadmin"),

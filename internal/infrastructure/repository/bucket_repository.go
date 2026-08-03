@@ -510,6 +510,10 @@ func (r *PostgresRepository) GetBucketObjectLock(ctx context.Context, bucketID s
 	}
 	return enabled, nil
 }
+func (r *PostgresRepository) CreatePrefix(ctx context.Context, bucketId string, prefixName string) (domain.Prefix, error) {
+
+	return domain.Prefix{},nil
+}
 
 func (r *PostgresRepository) GetBucketLogging(ctx context.Context, bucketID string) (interface{}, error) {
 	var loggingJSON []byte
@@ -811,6 +815,36 @@ func (r *PostgresRepository) ListBuckets(ctx context.Context, ownerID string) ([
 	return buckets, nil
 }
 
+func (r *PostgresRepository) GetPrefixByName(ctx context.Context, bucketID string, prefixName string) (domain.Prefix, error) {
+	query := `select 
+	id, bucket_id, parent_id,size, name,child_folder_ids,child_file_ids,created_at,updated_at  
+	from folders where bucket_id='$1' and name='$2'`
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	var prefix domain.Prefix
+
+	err := r.db.QueryRowContext(ctx, query, bucketID, prefix).Scan(
+		&prefix.ID,
+		&prefix.BucketID,
+		&prefix.ParentID,
+		&prefix.ChildFileIDs,
+		&prefix.ChildFolderIDs,
+		&prefix.Name,
+		&prefix.Size,
+		&prefix.CreatedAt,
+		&prefix.UpdatedAt,
+	)
+
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.Prefix{}, ErrNotFound
+		}
+		return domain.Prefix{}, fmt.Errorf("failed to get bucket: %w", err)
+	}
+
+	return prefix, nil
+}
 func (r *PostgresRepository) GetBucketByID(ctx context.Context, bucketID string, ownerID string) (domain.Bucket, error) {
 	query := `SELECT id, name, owner_id, arn, region, bucket_type, object_ownership, created_at, updated_at, policy, cors, replication, notifications, logging, storage_name, storage_host_id FROM buckets WHERE id = $1 AND ($2 = '' OR owner_id = $2)`
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)

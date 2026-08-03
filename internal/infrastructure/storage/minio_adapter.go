@@ -5,10 +5,11 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"net"
-	"strconv"
 	"s3/internal/domain"
 	"s3/internal/infrastructure/dto"
+	"strconv"
 	"strings"
 
 	"github.com/minio/minio-go/v7"
@@ -289,6 +290,7 @@ func (m *MinIOAdapter) GetObject(ctx context.Context, bucket, key string) ([]byt
 	if err != nil {
 		return nil, err
 	}
+log.Printf("client for bucket---->&%v",bucket)
 
 	object, err := client.GetObject(ctx, bucket, key, minio.GetObjectOptions{})
 	if err != nil {
@@ -297,6 +299,7 @@ func (m *MinIOAdapter) GetObject(ctx context.Context, bucket, key string) ([]byt
 	defer object.Close()
 
 	data, err := io.ReadAll(object)
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to read object: %w", err)
 	}
