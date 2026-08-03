@@ -29,6 +29,7 @@ type Handlers struct {
 // RegisterRoutes registers all application routes
 func RegisterRoutes(router *gin.Engine, handlers *Handlers) {
 	v1 := router.Group("/api/v1/s3")
+	pub := router.Group("/api/v1/s3")
 
 	v1.Use(middleware.AuthContextMiddleware())
  
@@ -38,7 +39,7 @@ func RegisterRoutes(router *gin.Engine, handlers *Handlers) {
 	// Register domain-specific routes
 	registerObjectRoutes(v1, handlers.File)
 	registerBucketRoutes(v1, handlers)
-	registerHealthRoutes(v1, handlers.Health)
+	registerHealthRoutes(v1, pub, handlers.Health)
 	registerWebhookRoutes(v1, handlers.Webhook)
 	registerMultipartRoutes(v1, handlers.Multipart)
 	registerAnalyticsRoutes(v1, handlers.Analytics)
@@ -63,9 +64,9 @@ func registerMetricsRoutes(v1 *gin.RouterGroup, handler *MetricsHandler) {
 }
 
 // registerHealthRoutes registers all health check routes
-func registerHealthRoutes(v1 *gin.RouterGroup, handler *HandlerForHealth) {
+func registerHealthRoutes(v1 *gin.RouterGroup,pub *gin.RouterGroup, handler *HandlerForHealth) {
 
-	health := v1.Group("/health")
+	health := pub.Group("/health")
 	{
 		health.GET("", handler.Ping)
 		health.GET("/status", handler.GetDetailedStatus)
