@@ -9,6 +9,8 @@ import (
 	"s3/internal/domain"
 	"s3/internal/infrastructure/dto"
 	"s3/internal/infrastructure/metrics"
+
+	// "s3/internal/infrastructure/repository"
 	"strings"
 	"time"
 
@@ -22,6 +24,7 @@ type BucketService struct {
 	policyRepo domain.PolicyRepository
 	storage    domain.StoragePort
 	metrics    *metrics.MetricsClient
+	// p repository.PostgresRepository
 }
 
 type BucketAlreadyExists struct {
@@ -49,6 +52,145 @@ func NewBucketService(
 	}
 }
 
+func (s *BucketService) ListFolderContent(
+	ctx context.Context,
+	folderName string,
+	bucketID string,
+	userId string,
+) (domain.BucketRoot, error) {
+
+	var root domain.BucketRoot
+
+	parent := "root"
+	current := ""
+
+	parts := strings.Split(strings.Trim(folderName, "/"), "/")
+
+	switch len(parts) {
+	case 0:
+		return root, fmt.Errorf("invalid folder path")
+
+	case 1:
+		current = parts[0]
+
+	default:
+		parent = parts[len(parts)-2]
+		current = parts[len(parts)-1]
+	}
+
+	bucket, err := s.bucketRepo.GetBucketByName(ctx, bucketID, userId)
+	if err != nil {
+		return root, fmt.Errorf("bucket not found for this user: %w,  %s, %s, %s", err, bucketID, current, parent)
+	}
+
+	fmt.Printf("bucket name===> %s\n", bucket.Name)
+	fmt.Printf("folder name===> %s\n", folderName)
+
+	// select * from files wherefolder id and bucketid
+	// select * fromfolderw where parentid
+	// prefix, err := s.bucketRepo.GetPrefixByName(
+	// 	ctx,
+	// 	bucket.ID,
+	// 	current,
+	// 	parent,
+	// )
+	// if err != nil {
+	// 	return root, fmt.Errorf("folder not found: %w,  %s, %s, %s", err, bucketID, current, parent)
+	// }
+	fmt.Printf("bucketid===> %s\n", bucket.ID)
+	fmt.Printf("current===> %s\n", current)
+	fmt.Printf("parentt===> %s\n", parent)
+
+	filesr, err := s.fileRepo.GetFileByPrefixAndBucketID(ctx, bucket.ID, folderName)
+
+	// this gets you allthe folders for this bucket on the root level
+	if err != nil {
+		fmt.Printf("here**\n,%v", filesr)
+		return domain.BucketRoot{}, err
+	}
+
+	var rootFiles []*domain.File
+
+	for _, file := range filesr {
+		rootFiles = append(rootFiles, &file)
+	}
+
+	// this gets you allthe folders for this bucket on the root level
+	bucketPrefixes, err := s.bucketRepo.GetPrefixByBucketID(ctx, bucket.ID, folderName)
+	if err != nil {
+		fmt.Printf("here**\n")
+		return domain.BucketRoot{}, err
+	}
+
+	// folders, err = s.bucketRepo.GetChildFolderIDs(ctx, bucketFolders.ch)
+	var bucketFolders []*domain.Folder
+
+	for _, folder := range bucketPrefixes {
+		bucketFolders = append(bucketFolders, &domain.Folder{
+			ID:        folder.ID,
+			Parent:    folder.ParentID,
+			Name:      folder.Name,
+			Size:      folder.Size,
+			FolderIDs: folder.ChildFolderIDs,
+			FileIDs:   folder.ChildFileIDs,
+		})
+	}
+
+	root.Files = rootFiles
+	root.Folders = bucketFolders
+	root.BucketId = bucket.ID
+
+	log.Printf("this is the final root: %v", root)
+
+	return root, nil
+}
+func (s *BucketService) CreatePrefix(ctx context.Context, input dto.CreatePrefixInput) error {
+
+	
+	// Check whether the bucket exists.
+	bucket, err := s.bucketRepo.GetBucketByName(ctx, input.BucketId, input.FildterId)
+	if err != nil {
+		return fmt.Errorf("bucket not found: %w", err)
+	}
+
+	// s.p.ErrNotFound
+	// Use the bucket's database ID.
+	input.BucketId = bucket.ID
+
+	// Check whether the folder already exists.
+	_, err = s.bucketRepo.GetPrefixByName(
+		ctx,
+		input.BucketId,
+		input.FildterId,
+		input.Parent,
+	)
+
+	switch {
+	case err == nil:
+		return fmt.Errorf("folder already exists at this level")
+
+	case err.Error() == "record not found*":
+		prefix, err1 := s.bucketRepo.CreatePrefix(
+			ctx,
+			input.BucketId,
+			input.Name,
+			input.Parent,
+		)
+		if err1 != nil {
+			return fmt.Errorf("failed to create prefix1: %w", err1)
+		}
+
+		err2 := s.bucketRepo.UpdateChildFolderIDs(ctx, prefix.ID, bucket.ID, input.Parent)
+		if err2 != nil {
+			return fmt.Errorf("failed to create prefix90: %w", err2)
+		}
+		return nil
+
+	default:
+		return fmt.Errorf("failed checking prefix3: %w", err)
+	}
+}
+
 func (s *BucketService) CreateBucket(ctx context.Context, input dto.CreateBucketInput) (*dto.CreateBucketOutput, error) {
 	if input.Name == "" {
 		return nil, fmt.Errorf("bucket name is required")
@@ -59,6 +201,7 @@ func (s *BucketService) CreateBucket(ctx context.Context, input dto.CreateBucket
 	if err == nil && existing.ID != "" {
 		return nil, &BucketAlreadyExists{Name: input.Name}
 	}
+	log.Printf("DEBUcG: OwnerId=%q, BucketName=%q", input.OwnerId, input.Name)
 
 	// Generate ID and Storage name (Physical name in MinIO)
 	bucketId := uuid.New().String()
@@ -149,7 +292,8 @@ func (s *BucketService) emitMetrics(ctx context.Context, bucketID, ownerID, regi
 }
 
 func (s *BucketService) resolveBucket(ctx context.Context, idOrName string, filterID string) (domain.Bucket, error) {
-	// Try by ID first
+	// Try by ID firstff
+	fmt.Printf("the bucke^^ %s and this filter id7 %s\n",idOrName,filterID)
 	bucket, err := s.bucketRepo.GetBucketByID(ctx, idOrName, filterID)
 	if err == nil {
 		return bucket, nil
@@ -161,17 +305,15 @@ func (s *BucketService) resolveBucket(ctx context.Context, idOrName string, filt
 		return bucket, nil
 	}
 
-	return domain.Bucket{}, fmt.Errorf("bucket not found: %s", idOrName)
+	return domain.Bucket{}, fmt.Errorf("bucket not found*: %s", idOrName)
 }
 
-func (s *BucketService) GetBucketByName(ctx context.Context, name string) (*domain.Bucket, error) {
-	actor, _ := ctx.Value("actor").(domain.Actor)
-	filterID := actor.ID
-	if IsAdmin(actor.ID) {
-		filterID = ""
-	}
 
-	bucket, err := s.bucketRepo.GetBucketByName(ctx, name, filterID)
+
+func (s *BucketService) GetBucketByName(ctx context.Context, name, userId string) (*domain.Bucket, error) {
+	
+
+	bucket, err := s.bucketRepo.GetBucketByName(ctx, name, userId)
 	if err != nil {
 		return nil, err
 	}
@@ -179,7 +321,7 @@ func (s *BucketService) GetBucketByName(ctx context.Context, name string) (*doma
 	return &bucket, nil
 }
 
-func (s *BucketService) GetBucketByID(ctx context.Context, id string) (*domain.Bucket, error) {
+func (s *BucketService) GetBucketByID(ctx context.Context, id string) (*domain.Bucket, error) { 
 	actor, _ := ctx.Value("actor").(domain.Actor)
 	filterID := actor.ID
 	if IsAdmin(actor.ID) {
@@ -228,54 +370,11 @@ type folderNode struct {
 	children map[string]*folderNode
 }
 
-// func buildBucketTree(files []domain.File) domain.BucketRoot {
-// 	rootChildren := map[string]*folderNode{}
-// 	rootFiles := []domain.File{}
+ 
 
-// 	for _, f := range files {
-// 		trimmed := strings.Trim(f.Key, "/")
-// 		if trimmed == "" {
-// 			continue
-// 		}
-// 		parts := strings.Split(trimmed, "/")
-
-// 		if len(parts) == 1 {
-// 			rootFiles = append(rootFiles, f)
-// 			continue
-// 		}
-
-// 		currentMap := rootChildren
-// 		var currentNode *folderNode
-
-// 		for i := 0; i < len(parts)-1; i++ {
-// 			name := parts[i]
-// 			node, ok := currentMap[name]
-// 			if !ok {
-// 				node = &folderNode{
-// 					folder:   &domain.Folder{Name: name},
-// 					children: map[string]*folderNode{},
-// 				}
-// 				currentMap[name] = node
-// 			}
-// 			node.folder.Size += f.Size
-// 			currentNode = node
-// 			currentMap = node.children
-// 		}
-
-// 		currentNode.folder.Files = append(currentNode.folder.Files, f)
-// 	}
-
-// var convert func(m map[string]*folderNode) []*dto.Folder
-// convert = func(m map[string]*folderNode
-
-// return domain.BucketRoot{}
-
-// }
-
-func (s *BucketService) GetBucket(ctx context.Context, bucketID string) (*domain.BucketInfoResponse, error) {
-	actor, _ := ctx.Value("actor").(domain.Actor)
-	filterID := actor.ID
-	if IsAdmin(actor.ID) {
+func (s *BucketService) GetBucket(ctx context.Context, bucketID , userId string,) (*domain.BucketInfoResponse, error) {
+	filterID := userId
+	if IsAdmin(filterID) {
 		filterID = ""
 	}
 
@@ -288,34 +387,43 @@ func (s *BucketService) GetBucket(ctx context.Context, bucketID string) (*domain
 	go s.emitMetrics(context.Background(), bucket.ID, bucket.OwnerID, bucket.Region, dto.S3IngestRequest{
 		HeadRequests: 1,
 	})
-	var dummyFolders []*domain.Folder
-	var dummyfiels []*domain.File
+	// var folders []domain.Prefix
 
-	dummyFolder := domain.Folder{
-		Name: "Documents",
-		Size: 200,
+	// this gets you allthe folders for this bucket on the root level
+	bucketPrefixes, err := s.bucketRepo.GetPrefixByBucketID(ctx, bucket.ID, "root")
+	if err != nil {
+		fmt.Printf("here**\n")
+		return nil, err
 	}
 
-	dummyFile := &domain.File{
-		ID:       "fe3bd449-6b6e-4381-8498-3ec8f46bad94",
-		Key:     "gadot.x86_64",
-		BucketID: bucket.ID,
+	// folders, err = s.bucketRepo.GetChildFolderIDs(ctx, bucketFolders.ch)
+	var bucketFolders []*domain.Folder
+
+	for _, folder := range bucketPrefixes {
+		bucketFolders = append(bucketFolders, &domain.Folder{
+			ID:        folder.ID,
+			Parent:    folder.ParentID,
+			Name:      folder.Name,
+			Size:      folder.Size,
+			FolderIDs: folder.ChildFolderIDs,
+			FileIDs:   folder.ChildFileIDs,
+		})
 	}
 
-	dummyFolders = append(dummyFolders, &dummyFolder)
-	dummyfiels = append(dummyfiels, dummyFile)
+	// this gets you allthe folders for this bucket on the root level
+	bucketFiles, err := s.fileRepo.GetFileByPrefixAndBucketID(ctx, bucket.ID, bucket.ID)
+	if err != nil {
+		fmt.Printf("here**\n,%v", bucketFiles)
+		return nil, err
+	}
 
-	rootFiles := []*domain.File{
-		dummyFile,
+	var rootFiles []*domain.File
+
+	for _, file := range bucketFiles {
+		rootFiles = append(rootFiles, &file)
 	}
-	rootFolders := []*domain.Folder{
-		{
-			Name:    "root",
-			Size:    100,
-			Files:   dummyfiels,
-			Folders: dummyFolders,
-		},
-	}
+
+ 
 	return &domain.BucketInfoResponse{
 		BucketInfo: domain.BucketInfo{
 			TotalFolderCount:   26,
@@ -331,7 +439,7 @@ func (s *BucketService) GetBucket(ctx context.Context, bucketID string) (*domain
 		},
 		Root: domain.BucketRoot{
 			Files:   rootFiles,
-			Folders: rootFolders,
+			Folders: bucketFolders,
 		},
 	}, nil
 }
@@ -1087,3 +1195,8 @@ func (s *BucketService) SetBucketTags(ctx context.Context, bucketID string, inpu
 
 	return nil
 }
+
+
+
+
+ 

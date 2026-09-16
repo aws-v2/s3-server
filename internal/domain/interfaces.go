@@ -14,6 +14,11 @@ type StoragePort interface {
 	SaveObject(ctx context.Context, bucket, key string, data []byte, metadata map[string]string) error
 	SaveObjectReader(ctx context.Context, bucket, key string, reader io.Reader, size int64, metadata map[string]string) error
 	GetObject(ctx context.Context, bucket, key string) ([]byte, error)
+	 GetObject2(
+        ctx context.Context,
+        bucket string,
+        key string,
+    ) (io.ReadCloser, error)
 	DeleteObject(ctx context.Context, bucket, key string) error
 	CreateBucket(ctx context.Context, name string) (string, string, error)
 	DeleteBucket(ctx context.Context, bucketId string) error
@@ -62,20 +67,40 @@ type FileRepository interface {
 	DeleteFile(ctx context.Context, id string) error
 	ListFilesByPrefix(ctx context.Context, bucketID, prefix string, limit int) ([]File, error)
 	CountFilesByPrefix(ctx context.Context, bucketID, prefix string) (int, error)
+	GetFileByPrefixAndBucketID(ctx context.Context, bucketID, prefix string) ([]File, error)
 	DeleteFilesByBucket(ctx context.Context, bucketID string) error
 	GetFilesBySHA256(ctx context.Context, sha256 string) ([]File, error)
 	GetFilesByARN(ctx context.Context, arn string) ([]File, error)
 }
 
 type BucketRepository interface {
+	UpdateChildFileIDs(
+	ctx context.Context,
+	newID string,
+	bucketID string,
+	parentID string,
+) error
+	UpdateChildFolderIDs(ctx context.Context, newId string, bucketId,parentId string)  error
+	// UpdateChilFileIDs(ctx context.Context, bucketID string, ids []string) error
+	GetFoldersByIDs(ctx context.Context, bucketID string, ids []string) ([]Prefix, error)
+	GetFilesByIDs(ctx context.Context, bucketID string, ids []string) ([]File, error)
+// type BucketFolders struct{
+// 	child_folder_id,
+// 	parent_name,
+	
+// }
+
+	GetchildFoldersForBucket(ctx context.Context, folderIds []string) ([]Prefix, error)
 	SaveBucket(ctx context.Context, bucket *Bucket) (Bucket, error)
 	GetBucketByID(ctx context.Context, bucketId string, ownerID string) (Bucket, error)
-	GetPrefixByName(ctx context.Context, bucketId string, prefixName string) (Prefix, error)
-	CreatePrefix(ctx context.Context, bucketId string, prefixName string) (Prefix, error)
+	GetPrefixByName(ctx context.Context, bucketId string, prefixName, parent string) (Prefix, error)
+	GetPrefixByBucketID(ctx context.Context, bucketId,parentId string) ([]Prefix, error) 
+	CreatePrefix(ctx context.Context, bucketId string, prefixName string ,parentID string) (Prefix, error)
 	GetBucketByName(ctx context.Context, name string, ownerID string) (Bucket, error)
 	GetBucketByStorageName(ctx context.Context, storageName string) (Bucket, error)
 	ListBuckets(ctx context.Context, ownerID string) ([]Bucket, error)
 	UpdateBucket(ctx context.Context, bucket *Bucket, ownerID string) (*Bucket, error)
+	// UpdateBucket(ctx context.Context, bucket *Bucket, ownerID string) (*Bucket, error)
 	DeleteBucket(ctx context.Context, bucketId string) error
 	SetBucketVersioning(ctx context.Context, bucketID string, status VersioningStatus) error
 	GetBucketVersioning(ctx context.Context, bucketID string) (VersioningStatus, error)

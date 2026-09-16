@@ -26,3 +26,32 @@ ALTER TABLE hosts ADD COLUMN IF NOT EXISTS status TEXT DEFAULT '';
 ALTER TABLE hosts ADD COLUMN IF NOT EXISTS last_heartbeat TIMESTAMP NOT NULL DEFAULT NOW();
 ALTER TABLE hosts ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT NOW();
 ALTER TABLE hosts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL DEFAULT NOW();
+
+
+
+
+CREATE TABLE vm_metrics (
+    id            BIGSERIAL PRIMARY KEY,
+    vm_id         TEXT NOT NULL,
+    host_id       TEXT NOT NULL,
+    name          VARCHAR(255) NOT NULL,
+    state         VARCHAR(50) NOT NULL,
+    cpu_used      DOUBLE PRECISION NOT NULL DEFAULT 0,
+    memory_used   BIGINT NOT NULL DEFAULT 0,
+    disk_read     BIGINT NOT NULL DEFAULT 0,
+    disk_write    BIGINT NOT NULL DEFAULT 0,
+    net_rx        BIGINT NOT NULL DEFAULT 0,
+    net_tx        BIGINT NOT NULL DEFAULT 0,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Useful for time-series queries per VM
+CREATE INDEX idx_vm_metrics_vm_id_created_at ON vm_metrics (vm_id, created_at DESC);
+CREATE INDEX idx_vm_metrics_host_id ON vm_metrics (host_id);
+
+
+
+
+
+ALTER TABLE files ADD COLUMN IF NOT EXISTS folder_id VARCHAR(255) NOT NULL DEFAULT '';
+ ALTER TABLE files ADD COLUMN IF NOT EXISTS file_name VARCHAR(255) NOT NULL DEFAULT '';

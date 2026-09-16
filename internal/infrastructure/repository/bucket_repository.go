@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"s3/internal/domain"
 	"time"
+
+	"github.com/lib/pq"
 )
 
 func (r *PostgresRepository) GetBucketVersioning(ctx context.Context, bucketID string) (domain.VersioningStatus, error) {
@@ -205,8 +207,225 @@ func (r *PostgresRepository) IncrementPolicyVersionAndUpdateBucket(ctx context.C
 	return nil
 }
 
+func (r *PostgresRepository) UpdateChildFolderIDs(
+	ctx context.Context,
+	newID string,
+	bucketID string,
+	parentID string,
+) error {
+fmt.Printf("---***: new id: %s bucketId: %s  parentId: %s", newID, bucketID,parentID)
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	query := `
+	UPDATE folders
+	SET child_folder_ids = child_folder_ids || to_jsonb($1::text)
+	WHERE bucket_id = $2
+	  AND parent_id = $3
+	`
+
+	result, err := r.db.ExecContext(
+		ctx,
+		query,
+		newID,
+		bucketID,
+		parentID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update child_folder_ids: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to determine rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return ErrNotFound
+	}
+
+	return nil
+}
+
+func (r *PostgresRepository) UpdateChildFileIDs(
+	ctx context.Context,
+	newID string,
+	bucketID string,
+	parentID string,
+) error {
+	fmt.Printf("\n ----->>newid %s bucketId %s parent: %s\n", newID, bucketID, parentID)
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	query := `
+	UPDATE folders
+	SET child_file_ids = child_file_ids || to_jsonb($1::text)
+	WHERE bucket_id = $2
+	  AND name = $3
+	`
+
+	result, err := r.db.ExecContext(
+		ctx,
+		query,
+		newID,
+		bucketID,
+		parentID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update child_file_ids: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to determine rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return ErrNotFound
+	}
+
+	return nil
+}
+func (r *PostgresRepository) GetFoldersByIDs(
+	ctx context.Context,
+	bucketID string,
+	ids []string,
+) ([]domain.Prefix, error) {
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	if len(ids) == 0 {
+		return []domain.Prefix{}, nil
+	}
+
+	query := `
+	SELECT
+		id,
+		bucket_id,
+		parent_id,
+		name,
+		size,
+		child_folder_ids,
+		child_file_ids,
+		created_at,
+		updated_at
+	FROM folders
+	WHERE bucket_id = $1
+	AND id = ANY($2)
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, bucketID, pq.Array(ids))
+	if err != nil {
+		return nil, fmt.Errorf("failed to get folders: %w", err)
+	}
+	defer rows.Close()
+
+	var folders []domain.Prefix
+
+	for rows.Next() {
+		var p domain.Prefix
+		var childFolders []byte
+		var childFiles []byte
+
+		err := rows.Scan(
+			&p.ID,
+			&p.BucketID,
+			&p.ParentID,
+			&p.Name,
+			&p.Size,
+			&childFolders,
+			&childFiles,
+			&p.CreatedAt,
+			&p.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		json.Unmarshal(childFolders, &p.ChildFolderIDs)
+		json.Unmarshal(childFiles, &p.ChildFileIDs)
+
+		folders = append(folders, p)
+	}
+
+	return folders, nil
+}
+
+func (r *PostgresRepository) GetFilesByIDs(
+	ctx context.Context,
+	bucketID string,
+	ids []string,
+) ([]domain.File, error) {
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	if len(ids) == 0 {
+		return []domain.File{}, nil
+	}
+
+	query := `
+	SELECT
+		id,
+		bucket_id,
+		key,
+		size,
+		version,
+		mime_type,
+		content_type,
+		storage_class,
+		sha256,
+		metadata,
+		created_at,
+		updated_at
+	FROM files
+	WHERE bucket_id = $1
+	AND id = ANY($2)
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, bucketID, pq.Array(ids))
+	if err != nil {
+		return nil, fmt.Errorf("failed to get files: %w", err)
+	}
+	defer rows.Close()
+
+	var files []domain.File
+
+	for rows.Next() {
+		var f domain.File
+		var metadata []byte
+
+		err := rows.Scan(
+			&f.ID,
+			&f.BucketID,
+			&f.Key,
+			&f.Size,
+			&f.Version,
+			&f.MimeType,
+			&f.ContentType,
+			&f.StorageClass,
+			&f.SHA256,
+			&metadata,
+			&f.CreatedAt,
+			&f.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		if len(metadata) > 0 {
+			json.Unmarshal(metadata, &f.Metadata)
+		}
+
+		files = append(files, f)
+	}
+
+	return files, nil
+}
+
 func (r *PostgresRepository) GetBucketByName(ctx context.Context, name string, ownerID string) (domain.Bucket, error) {
-	query := `SELECT id, name, owner_id, arn, region, bucket_type, object_ownership, created_at, updated_at, policy, cors, replication, notifications, logging, storage_name, storage_host_id FROM buckets WHERE name = $1 AND ($2 = '' OR owner_id = $2)`
+	query := `SELECT id, name, owner_id, arn, region, bucket_type, object_ownership, created_at, updated_at, policy, cors, replication, notifications, logging, storage_name, storage_host_id FROM buckets WHERE name = $1 AND   owner_id = $2`
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
@@ -510,9 +729,117 @@ func (r *PostgresRepository) GetBucketObjectLock(ctx context.Context, bucketID s
 	}
 	return enabled, nil
 }
-func (r *PostgresRepository) CreatePrefix(ctx context.Context, bucketId string, prefixName string) (domain.Prefix, error) {
 
-	return domain.Prefix{},nil
+func (r *PostgresRepository) GetPrefixByBucketID(ctx context.Context, bucketId, parentId string) ([]domain.Prefix, error) {
+	var folders []domain.Prefix
+	query := `select id, bucket_id, size, name,parent_id,created_at,updated_at from folders where bucket_id=$1 and parent_id=$2`
+	folderRows, err := r.db.QueryContext(ctx, query, bucketId, parentId)
+	if err != nil {
+
+		return nil, err
+	}
+
+	for folderRows.Next() {
+		// var ruleJSON []byte
+		var folder domain.Prefix
+ 
+
+		if err := folderRows.Scan(
+			&folder.ID, 
+			&folder.BucketID, 
+			&folder.Size,
+			&folder.Name,
+			&folder.ParentID, 
+			// &folder.ChildFolderIDs, 
+			// &folder.ChildFileIDs,
+			&folder.CreatedAt, 
+			&folder.UpdatedAt); err != nil {
+			return nil, err
+		}
+
+		// var rule domain.Prefix
+		// if err := json.Unmarshal(ruleJSON, &rule); err != nil {
+		// 	return nil, err
+		// }
+		folders = append(folders, folder)
+	}
+
+	return folders, nil
+
+}
+
+func (r *PostgresRepository) CreatePrefix(
+	ctx context.Context,
+	bucketID string,
+	prefixName string,
+	parentID string,
+) (domain.Prefix, error) {
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	query := `
+	INSERT INTO folders (
+		bucket_id,
+		name,
+		parent_id,
+		size,
+		child_folder_ids,
+		child_file_ids
+	)
+	VALUES (
+		$1,
+		$2,
+		$3,
+		0,
+		'{}',
+		'{}'
+	)
+	RETURNING
+		id,
+		bucket_id,
+		parent_id,
+		name,
+		size,
+		child_folder_ids,
+		child_file_ids,
+		created_at,
+		updated_at
+	`
+
+	var prefix domain.Prefix
+
+	err := r.db.QueryRowContext(
+		ctx,
+		query,
+		bucketID,
+		prefixName,
+		parentID,
+	).Scan(
+		&prefix.ID,
+		&prefix.Name,
+		&prefix.ParentID,
+		&prefix.Name,
+		&prefix.Size,
+		pq.Array(&prefix.ChildFolderIDs),
+		pq.Array(&prefix.ChildFileIDs),
+		&prefix.CreatedAt,
+		&prefix.UpdatedAt,
+	)
+
+	if err != nil {
+		if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "23505" {
+	fmt.Println("prefic****89*")
+
+			return domain.Prefix{}, fmt.Errorf("prefix already exists")
+		}
+	fmt.Println("prefic***d**")
+
+		return domain.Prefix{}, fmt.Errorf("failed to create prefix: %w", err)
+	}
+
+
+	return prefix, nil
 }
 
 func (r *PostgresRepository) GetBucketLogging(ctx context.Context, bucketID string) (interface{}, error) {
@@ -815,38 +1142,78 @@ func (r *PostgresRepository) ListBuckets(ctx context.Context, ownerID string) ([
 	return buckets, nil
 }
 
-func (r *PostgresRepository) GetPrefixByName(ctx context.Context, bucketID string, prefixName string) (domain.Prefix, error) {
-	query := `select 
-	id, bucket_id, parent_id,size, name,child_folder_ids,child_file_ids,created_at,updated_at  
-	from folders where bucket_id='$1' and name='$2'`
+// id, bucket_id, parent_id,  name,size, child_folder_ids, child_file_ids, created_at, updated_at
+func (r *PostgresRepository) GetPrefixByName(
+	ctx context.Context,
+	bucketID string,
+	prefixName string,
+	parent string,
+) (domain.Prefix, error) {
+
+	query := `
+	SELECT
+		id,
+		bucket_id,
+		parent_id,
+		name,
+		size,
+		child_folder_ids,
+		child_file_ids,
+		created_at,
+		updated_at
+	FROM folders
+	WHERE bucket_id = $1
+	  AND name = $2
+	  AND parent_id = $3
+	`
+
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	var prefix domain.Prefix
 
-	err := r.db.QueryRowContext(ctx, query, bucketID, prefix).Scan(
+	var childFolderIDs []byte
+	var childFileIDs []byte
+
+	err := r.db.QueryRowContext(
+		ctx,
+		query,
+		bucketID,
+		prefixName,
+		parent,
+	).Scan(
 		&prefix.ID,
 		&prefix.BucketID,
 		&prefix.ParentID,
-		&prefix.ChildFileIDs,
-		&prefix.ChildFolderIDs,
 		&prefix.Name,
 		&prefix.Size,
+		&childFolderIDs,
+		&childFileIDs,
 		&prefix.CreatedAt,
 		&prefix.UpdatedAt,
 	)
 
 	if err != nil {
+
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.Prefix{}, ErrNotFound
 		}
-		return domain.Prefix{}, fmt.Errorf("failed to get bucket: %w", err)
+		return domain.Prefix{}, fmt.Errorf("failed to get prefix: %w", err)
 	}
+	// if err := json.Unmarshal(childFolderIDs, &prefix.ChildFolderIDs); err != nil {
+	// 	return domain.Prefix{}, err
+	// }
 
+	// if err := json.Unmarshal(childFileIDs, &prefix.ChildFileIDs); err != nil {
+	// 	return domain.Prefix{}, err
+	// }
 	return prefix, nil
 }
 func (r *PostgresRepository) GetBucketByID(ctx context.Context, bucketID string, ownerID string) (domain.Bucket, error) {
-	query := `SELECT id, name, owner_id, arn, region, bucket_type, object_ownership, created_at, updated_at, policy, cors, replication, notifications, logging, storage_name, storage_host_id FROM buckets WHERE id = $1 AND ($2 = '' OR owner_id = $2)`
+	query := `SELECT id, name, owner_id, arn, region, bucket_type, object_ownership, created_at, updated_at, policy, cors, replication, notifications, logging, storage_name, storage_host_id FROM buckets WHERE id = $1 AND   owner_id = $2`
+	// SELECT id, name, owner_id, arn, region, bucket_type, object_ownership, created_at, updated_at, policy, cors, replication, notifications, logging, storage_name, storage_host_id FROM buckets WHERE id = '29773140-33f5-46ac-a27b-bed0e3091034' AND   owner_id ='00000000-0000-0000-0000-000000000000';
+	
+	
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 

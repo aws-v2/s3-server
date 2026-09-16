@@ -78,7 +78,10 @@ type StorageLensSnapshot struct {
 type Folder struct {
 	Parent  string
 	Name    string    `json:"name"`
+	ID    string    `json:"id"`
 	Size    int64     `json:"size"`
+	FolderIDs []string `json:"folder_ids"`
+	FileIDs []string `json:"file_ids"`
 	Files   []*File   `json:"files"`
 	Folders []*Folder `json:"folders"`
 }
@@ -89,7 +92,7 @@ type Prefix struct {
 	ChildFolderIDs []string  `json:"child_folder_ids"`
 	ChildFileIDs   []string  `json:"child_file_ids"`
 	Size           int64     `json:"size"`
-	Name           int64     `json:"name"`
+	Name           string     `json:"name"`
 	UpdatedAt      time.Time `json:"updated_at"`
 	CreatedAt time.Time `json:"created_at"`
 }
@@ -107,6 +110,7 @@ type BucketInfo struct {
 }
 
 type BucketRoot struct {
+	BucketId string `json:"bucket_id"`
 	Folders []*Folder `json:"folders"`
 	Files   []*File   `json:"files"`
 }

@@ -54,10 +54,9 @@ func (r *PostgresRepository) GetFileByKey(ctx context.Context, bucketID string, 
 	return &file, nil
 }
 
-
 // The safetty of this function is predicate on that its never used
 // anywhere else, because when selecting by key since the agent keys willalways be unique
-// given itjust one system user has accestothat bucket, 
+// given itjust one system user has accestothat bucket,
 // TOFIX:
 // TODO:
 func (r *PostgresRepository) GetFileByIDOrKey(ctx context.Context, idOrKey string, bucketID string) (*domain.File, error) {
@@ -175,6 +174,64 @@ func (r *PostgresRepository) GetFileByID(ctx context.Context, id string) (*domai
 }
 
 // SaveFile saves or updates a file record
+func (r *PostgresRepository) GetFileByPrefixAndBucketID(ctx context.Context, bucketId, prefixId string) ([]domain.File, error) {
+
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	query := `
+		SELECT id, bucket_id, key, size, mime_type, metadata, sha256, created_at,file_name
+		FROM files
+		WHERE bucket_id = $1 and folder_id=$2
+		ORDER BY created_at DESC
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, bucketId, prefixId)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query files: %w", err)
+	}
+	defer rows.Close()
+
+	var files []domain.File
+	for rows.Next() {
+		var file domain.File
+		var metadataJSON []byte
+		var mimeType sql.NullString
+
+		err := rows.Scan(
+			&file.ID,
+			&file.BucketID,
+			&file.Key,
+			&file.Size,
+			&mimeType,
+			&metadataJSON,
+			&file.SHA256,
+			&file.CreatedAt,
+			&file.FileName,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan file: %w", err)
+		}
+
+		if mimeType.Valid {
+			file.MimeType = mimeType.String
+		}
+
+		if len(metadataJSON) > 0 {
+			if err = json.Unmarshal(metadataJSON, &file.Metadata); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal metadata: %w", err)
+			}
+		}
+
+		files = append(files, file)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating files: %w", err)
+	}
+
+	return files, nil
+}
 func (r *PostgresRepository) SaveFile(ctx context.Context, file domain.File) error {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -184,27 +241,34 @@ func (r *PostgresRepository) SaveFile(ctx context.Context, file domain.File) err
 		return fmt.Errorf("failed to marshal metadata: %w", err)
 	}
 
-	
 	query := `
-		INSERT INTO files (id, bucket_id, key, size, mime_type, metadata, sha256, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO files (id, bucket_id, key, size, mime_type, metadata, sha256, created_at,folder_id,file_name)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8,$9,$10)
 		ON CONFLICT (bucket_id, key) DO UPDATE 
-		SET size = EXCLUDED.size,
+		SET 
+			id =EXCLUDED.id,
+			bucket_id=EXCLUDED.bucket_id, 
+			key=EXCLUDED.key,
+			size=EXCLUDED.size,
 		    mime_type = EXCLUDED.mime_type,
 		    metadata = EXCLUDED.metadata,
 		    sha256 = EXCLUDED.sha256,
-		    created_at = EXCLUDED.created_at
+		    created_at = EXCLUDED.created_at,
+			folder_id=EXCLUDED.folder_id,
+			file_name=EXCLUDED.file_name
 	`
 
 	_, err = r.db.ExecContext(ctx, query,
-		file.ID, file.BucketID, file.Key, file.Size,
-		file.MimeType, metadataJSON, file.SHA256, file.CreatedAt,
+		file.ID,
+		file.BucketID,
+		file.Key,
+		file.Size,
+		file.MimeType,
+		metadataJSON, file.SHA256, file.CreatedAt, file.FolderId, file.FileName,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to save file: %w", err)
 	}
-
-
 
 	return nil
 }
@@ -711,7 +775,8 @@ func (r *PostgresRepository) GetFilesBySHA256(ctx context.Context, sha256 string
 	return files, nil
 }
 
-var mkdir string =""
+var mkdir string = ""
+
 // GetFilesBySHA256 retrieves all files matching a specific sha256 hash
 func (r *PostgresRepository) GetFilesByARN(ctx context.Context, sha256 string) ([]domain.File, error) {
 	query := `
@@ -766,4 +831,3 @@ func (r *PostgresRepository) GetFilesByARN(ctx context.Context, sha256 string) (
 
 	return files, nil
 }
-

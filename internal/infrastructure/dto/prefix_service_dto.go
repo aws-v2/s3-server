@@ -14,6 +14,9 @@ type ListByPrefixOutput struct {
 	CommonPrefixes []string   `json:"common_prefixes,omitempty"`
 	Total          int        `json:"total"`
 }
+type CreatePrefixInputDto struct {
+	Name string `json:"name"`
+}
 type CreatePrefixInput struct {
 	Name string `json:"name"`
 	Parent string `json:"parent"`

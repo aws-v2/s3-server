@@ -90,9 +90,7 @@ func (s *PresignService) GenerateUploadURL(ctx context.Context, input dto.Genera
 	// ExpiresIn: 900,
 
 	filterID := input.UserId
-	if IsAdmin(input.UserId) {
-		filterID = ""
-	}
+ 
 
 	if input.Key == "" {
 		return nil, fmt.Errorf("key is required")
@@ -102,7 +100,7 @@ func (s *PresignService) GenerateUploadURL(ctx context.Context, input dto.Genera
 	// bucket, err := s.bucketRepo.GetBucketByID(ctx, input.BucketID, filterID)
 	bucket, err := s.resolveBucket(ctx, input.BucketID, filterID)
 	if err != nil {
-		return nil, fmt.Errorf("bucket not found: %w", err)
+		return nil, fmt.Errorf("bucket with this id/name %s not found or this filter id %s : %w",input.BucketID, filterID, err)
 	}
 
 	expiresIn := input.ExpiresIn
@@ -161,6 +159,13 @@ func (s *PresignService) GenerateSignedURL(
 	fileID *string,
 ) (string, error) {
 
+// ENG_COMMENT
+// why are there both s and sha256 in the payload, 
+// some services downstream use the 's' key while other use 'sha256' key
+// so for safety purposes they both stay
+// however one may ask since all services downstream  download files from the 
+// /download enpoint, why not update this payload based on that, 
+// unto you i would say, i tried that, and it broke stuff, so they both stay
 	payload := map[string]interface{}{
 		"u":   urlID,
 		"b":   bucketID,
@@ -168,10 +173,22 @@ func (s *PresignService) GenerateSignedURL(
 		"a":   assetID,
 		"uid": userID,
 		"sha": sha256Hash,
+		"s": sha256Hash,
 		"m":   method,
 		"e":   expiresAt.Unix(),
 	}
+// Payload used to creat the download url map[
+// a:91e7e999-4e4b-41f2-ae46-339e6443e5e6 
+// b:371bfcf0-f0b4-4983-b0c4-22cca886d6fd 
+// e:1789064025 k:371bfcf0-f0b4-4983-b0c4-22cca886d6fd/functions/91e7e999-4e4b-41f2-ae46-339e6443e5e6 
+// m:GET 
+// s:fd914edda5ce414784cb0dfb0d4036e223e52227efe901e11734063819aadea8 
+// sha:fd914edda5ce414784cb0dfb0d4036e223e52227efe901e11734063819aadea8 
+// u:b0fc3323-b2ba-4020-88ae-feaf9a24b0b3 
+// uid:00000000-0000-0000-0000-000000000000]
+	fmt.Printf("Payload used to creat the download url %+v",payload)
 
+ 
 	payloadJSON, _ := json.Marshal(payload)
 	payloadEncoded := base64.RawURLEncoding.EncodeToString(payloadJSON)
 	signature := s.signString(payloadEncoded)
@@ -197,7 +214,7 @@ func (s *PresignService) GenerateSignedURL(
 			return "", fmt.Errorf("fileID is required for GET presigned URLs")
 		}
 		return fmt.Sprintf(
-			"/api/v1/s3/files/%s/files/%s/download?%s",
+			"/api/v1/s3/files/%s/files/%s/download2?%s",
 			bucketID,
 			*fileID,
 			values.Encode(),

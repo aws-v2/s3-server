@@ -54,9 +54,7 @@ func NewUploadService(
 func (s *UploadService) UploadObjectReader(ctx context.Context, bucketID, key string, reader io.Reader, size int64, contentType string, metadata map[string]string) error {
 	actor, _ := ctx.Value("actor").(domain.Actor)
 	filterID := actor.ID
-	if IsAdmin(actor.ID) {
-		filterID = ""
-	}
+ 
 
 	// Resolve bucket
 	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
@@ -205,7 +203,12 @@ func (s *UploadService) resolveBucket(ctx context.Context, idOrName string, filt
 	bucket, err = s.bucketRepo.GetBucketByName(ctx, idOrName, filterID)
 	if err == nil {
 		return bucket, nil
+	}else{
+	log.Printf("Failed to resolve bucket by id and by name %s with thsi error %v and this filter id %v",idOrName, err,filterID)
 	}
+
+
+	
 
 	return domain.Bucket{}, fmt.Errorf("bucket not found: %s", idOrName)
 }
@@ -213,11 +216,12 @@ func (s *UploadService) resolveBucket(ctx context.Context, idOrName string, filt
 func (s *UploadService) UploadFile(
 	ctx context.Context,
 	input UploadFileInput,
+	prefixName ,userID string,
 ) (*UploadFileOutput, error) {
 
 	start := time.Now()
 
-	userID, _ := ctx.Value("userId").(string)
+	// userID, _ := ctx.Value("userId").(string)
 	requestID, _ := ctx.Value("requestId").(string)
 
 	filterID := userID
@@ -247,6 +251,12 @@ func (s *UploadService) UploadFile(
 
 		return nil, err
 	}
+
+	if prefixName=="root" || prefixName=="" {
+		prefixName = bucket.ID
+		input.Prefix=bucket.ID
+	}
+
 
 	log.Printf(
 		"[UploadService] bucket resolved request_id=%s storage_name=%s owner_id=%s",
@@ -351,6 +361,8 @@ func (s *UploadService) UploadFile(
 			Metadata:  metaMap,
 			SHA256:    sha256Value,
 			CreatedAt: time.Now(),
+			FolderId: input.Prefix,
+			FileName: f.Name,
 		}
 
 		log.Printf(
@@ -375,6 +387,21 @@ func (s *UploadService) UploadFile(
 				err,
 			)
 		}
+
+		// parent := bucket.ID
+		// parts := strings.Split(strings.Trim(prefixName, "/"), "/")
+		// switch len(parts) {
+		// case 0:
+		// 	return nil, fmt.Errorf("invalid folder path")
+		// case 1:
+		// 	parent = bucket.ID
+		// default:
+		// 	parent = parts[len(parts)-2]
+		// }
+		// err = s.bucketRepo.UpdateChildFileIDs(ctx, file.ID, bucket.ID, parent)
+		// if err != nil {
+		// 	return nil, fmt.Errorf("failed to update child_file_ids: %w", err)
+		// }
 
 		log.Printf(
 			"[UploadService] file completed request_id=%s file_id=%s duration=%s",
@@ -475,9 +502,7 @@ type FilesNotFoundForExport struct {
 func (s *UploadService) ExportSelect(ctx context.Context, files []string, bucketID string) (ExportOutput, error) {
 	actor := ctx.Value("userId")
 	filterID := fmt.Sprintf("%v", actor)
-	if IsAdmin(filterID) {
-		filterID = ""
-	}
+	
 
 	// Resolve bucket
 	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
@@ -538,9 +563,7 @@ func (s *UploadService) ExportSelect(ctx context.Context, files []string, bucket
 func (s *UploadService) ExportBucket(ctx context.Context, bucketID string) (ExportOutput, error) {
 	actor := ctx.Value("userId")
 	filterID := fmt.Sprintf("%v", actor)
-	if IsAdmin(filterID) {
-		filterID = ""
-	}
+ 
 
 	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
 	if err != nil {
@@ -593,9 +616,7 @@ func (s *UploadService) ExportBucket(ctx context.Context, bucketID string) (Expo
 func (s *UploadService) ExportFolder(ctx context.Context, bucketID string, folderName string) (ExportOutput, error) {
 	actor := ctx.Value("userId")
 	filterID := fmt.Sprintf("%v", actor)
-	if IsAdmin(filterID) {
-		filterID = ""
-	}
+ 
 
 	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
 	if err != nil {
@@ -610,7 +631,7 @@ func (s *UploadService) ExportFolder(ctx context.Context, bucketID string, folde
 
 	files, err := s.fileRepo.ListFilesByPrefix(ctx, bucket.ID, prefix, 0)
 	if err != nil {
-		return ExportOutput{}, fmt.Errorf("failed to list files by prefix: %w", err)
+		return ExportOutput{}, fmt.Errorf("failed to list files by prefix23: %w", err)
 	}
 
 	// Collect non-folder file keys
@@ -655,7 +676,7 @@ func (s *UploadService) ExportFolder(ctx context.Context, bucketID string, folde
 // For each file: GetObject returns the raw bytes -> zip.Writer.Create adds an entry -> Write the bytes.
 // Finally, Close() flushes the zip central directory.
 // This is the same pattern used in prefix_service.go's createZipArchive.
-func (s *UploadService) createZipFromFiles(ctx context.Context, storageName string, keys []string) ([]byte, error) {
+func (s *UploadService) 	createZipFromFiles(ctx context.Context, storageName string, keys []string) ([]byte, error) {
 	buf := new(bytes.Buffer)
 	zipWriter := zip.NewWriter(buf)
 	log.Printf("---->&%v", storageName)
@@ -721,15 +742,12 @@ if(bucket_repo.containsAll(files_repo)){
 func (s *UploadService) CreateFolder(ctx context.Context, bucketID, folderName string) error {
 	actor, _ := ctx.Value("actor").(domain.Actor)
 	filterID := actor.ID
-	if IsAdmin(actor.ID) {
-		filterID = ""
-	}
-
+ 
 	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
 	if err != nil {
 		return err
 	}
-
+	// s.bucketRepo.CreateFolder(ctx,bucketID,name)
 	// Folder name must end with /
 	folderKey := folderName
 	if !strings.HasSuffix(folderKey, "/") {
@@ -772,9 +790,7 @@ func generateID() string {
 func (s *UploadService) GetFileInfo(ctx context.Context, bucketID, fileID string) (*dto.FileInfoOutput, error) {
 	actor, _ := ctx.Value("actor").(domain.Actor)
 	filterID := actor.ID
-	if IsAdmin(actor.ID) {
-		filterID = ""
-	}
+ 
 
 	// Resolve bucket by ID or Name
 	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
@@ -826,9 +842,7 @@ func (s *UploadService) GetFileInfo(ctx context.Context, bucketID, fileID string
 func (s *UploadService) GetFileInfoFolder(ctx context.Context, bucketID, fileID, folderID string) (*dto.FileInfoOutput, error) {
 	actor, _ := ctx.Value("actor").(domain.Actor)
 	filterID := actor.ID
-	if IsAdmin(actor.ID) {
-		filterID = ""
-	}
+ 
 
 	// Resolve bucket by ID or Name
 	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
@@ -883,14 +897,11 @@ func (s *UploadService) GetFileInfoFolder(ctx context.Context, bucketID, fileID,
 //   3. Insert into a recursive map: map[folderName] -> children
 //   4. Convert the map into FolderNode/FileNode structs
 
-func (s *UploadService) ListFiles(ctx context.Context, c *gin.Context,bucketName string) (*dto.BucketStructureOutput, error) {
+func (s *UploadService) ListFiles(ctx context.Context, c *gin.Context, bucketName string) (*dto.BucketStructureOutput, error) {
 	actor := c.GetString("userId")
 	filterID := fmt.Sprintf("%v", actor)
 	log.Printf("Updated filter id code: %s", filterID)
-	if IsAdmin(filterID) {
-		filterID = ""
-	}
-
+ 
 	// Resolve bucket by ID or Name
 	bucket, err := s.resolveBucket(ctx, bucketName, filterID)
 	if err != nil {
@@ -1043,16 +1054,182 @@ func (s *UploadService) countFilesRecursive(folderPath string, folderMap map[str
 	return count
 }
 
-func (s *UploadService) DownloadFile(ctx context.Context, bucketId, fileID string, userID string) ([]byte, *dto.FileInfoOutput, error) {
-	filterID := userID
-	if IsAdmin(userID) {
-		filterID = ""
-	}
-	log.Printf("[SERVICE] DownloadFile: start actorID=%s bucketID=%s fileID=%s isAdmin=%v", userID, bucketId, fileID, IsAdmin(userID))
 
-	bucket, err := s.resolveBucket(ctx, bucketId, filterID)
+
+
+
+
+
+
+
+
+
+func (s *UploadService) DownloadFile2(
+    ctx context.Context,
+    bucketId string,
+    fileID string,
+    userID string,
+) (io.ReadCloser, *dto.FileInfoOutput, error) {
+
+    log.Printf(
+        "[SERVICE] DownloadFile2: start actorID=%s bucketID=%s fileID=%s",
+        userID,
+        bucketId,
+        fileID,
+    )
+
+    bucket, err := s.resolveBucket(ctx, bucketId, userID)
+    if err != nil {
+        log.Printf(
+            "[SERVICE] DownloadFile2: resolveBucket failed bucketID=%s userID=%s err=%v",
+            bucketId,
+            userID,
+            err,
+        )
+
+        return nil, nil, err
+    }
+
+    log.Printf(
+        "[SERVICE] DownloadFile2: bucket resolved bucketID=%s storageName=%s",
+        bucket.ID,
+        bucket.StorageName,
+    )
+
+    var file *domain.File
+
+    isSystemActor := userID == "00000000-0000-0000-0000-000000000000"
+
+    if isSystemActor {
+        log.Printf(
+            "[SERVICE] DownloadFile2: system actor resolving file by ID or key fileID=%s bucketID=%s",
+            fileID,
+            bucket.ID,
+        )
+
+        file, err = s.fileRepo.GetFileByIDOrKey(
+            ctx,
+            fileID,
+            bucket.ID,
+        )
+    } else {
+        log.Printf(
+            "[SERVICE] DownloadFile2: regular actor resolving file strictly by ID fileID=%s",
+            fileID,
+        )
+
+        file, err = s.fileRepo.GetFileByID(
+            ctx,
+            fileID,
+        )
+    }
+
+    if err != nil {
+        log.Printf(
+            "[SERVICE] DownloadFile2: file resolution failed fileID=%s err=%v",
+            fileID,
+            err,
+        )
+
+        return nil, nil, fmt.Errorf(
+            "file not found: %w",
+            err,
+        )
+    }
+
+    log.Printf(
+        "[SERVICE] DownloadFile2: file resolved fileID=%s key=%s bucketID=%s size=%d",
+        file.ID,
+        file.Key,
+        file.BucketID,
+        file.Size,
+    )
+
+    if file.BucketID != bucket.ID {
+        log.Printf(
+            "[SERVICE] DownloadFile2: bucket mismatch fileBucketID=%s requestedBucketID=%s",
+            file.BucketID,
+            bucket.ID,
+        )
+
+        return nil, nil, fmt.Errorf(
+            "file not in specified bucket",
+        )
+    }
+
+    log.Printf(
+        "[SERVICE] DownloadFile2: opening object stream storageName=%s key=%s",
+        bucket.StorageName,
+        file.Key,
+    )
+
+    object, err := s.storage.GetObject2(
+        ctx,
+        bucket.StorageName,
+        file.Key,
+    )
+
+    if err != nil {
+        log.Printf(
+            "[SERVICE] DownloadFile2: storage.GetObject2 failed storageName=%s key=%s err=%v",
+            bucket.StorageName,
+            file.Key,
+            err,
+        )
+
+        return nil, nil, fmt.Errorf(
+            "failed to retrieve file: %w",
+            err,
+        )
+    }
+
+    metadata := &dto.FileInfoOutput{
+        FileID:    file.ID,
+        BucketID:  file.BucketID,
+        Key:       file.Key,
+        Size:      file.Size,
+        MimeType:  file.MimeType,
+        Metadata:  file.Metadata,
+        SHA256:    file.SHA256,
+        CreatedAt: file.CreatedAt,
+    }
+
+    log.Printf(
+        "[SERVICE] DownloadFile2: stream opened fileID=%s size=%d",
+        file.ID,
+        file.Size,
+    )
+
+    return object, metadata, nil
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+func (s *UploadService) DownloadFile(ctx context.Context, bucketId, fileID string, userID string) ([]byte, *dto.FileInfoOutput, error) {
+
+	log.Printf("[SERVICE] DownloadFile: start actorID=%s bucketID=%s fileID=%s ", userID, bucketId, fileID, )
+
+	bucket, err := s.resolveBucket(ctx, bucketId, userID)
 	if err != nil {
-		log.Printf("[SERVICE] DownloadFile: resolveBucket failed bucketID=%s err=%v", bucketId, err)
+		log.Printf("[SERVICE] DownloadFile: resolveBucket failed bucketID=%s userId %s, err=%v", bucketId, userID, err)
 		return nil, nil, err
 	}
 
@@ -1115,9 +1292,7 @@ func (s *UploadService) DownloadFile(ctx context.Context, bucketId, fileID strin
 func (s *UploadService) UpdateFileMetadata(ctx context.Context, bucketID, fileID string, input dto.UpdateFileMetadataInput) (*dto.FileInfoOutput, error) {
 	actor, _ := ctx.Value("actor").(domain.Actor)
 	filterID := actor.ID
-	if IsAdmin(actor.ID) {
-		filterID = ""
-	}
+ 
 
 	bucket, err := s.resolveBucket(ctx, bucketID, filterID)
 	if err != nil {
@@ -1159,9 +1334,7 @@ func (s *UploadService) UpdateFileMetadata(ctx context.Context, bucketID, fileID
 func (s *UploadService) CopyFile(ctx context.Context, sourceBucketID, fileID string, input dto.CopyFileInput) (*dto.FileInfoOutput, error) {
 	actor, _ := ctx.Value("actor").(domain.Actor)
 	filterID := actor.ID
-	if IsAdmin(actor.ID) {
-		filterID = ""
-	}
+
 
 	sourceBucket, err := s.resolveBucket(ctx, sourceBucketID, filterID)
 	if err != nil {
@@ -1231,9 +1404,7 @@ func (s *UploadService) CopyFile(ctx context.Context, sourceBucketID, fileID str
 func (s *UploadService) MoveFile(ctx context.Context, sourceBucketName, fileID string, input dto.MoveFileInput) (*dto.FileInfoOutput, error) {
 	actor, _ := ctx.Value("actor").(domain.Actor)
 	filterID := actor.ID
-	if IsAdmin(actor.ID) {
-		filterID = ""
-	}
+ 
 
 	sourceBucket, err := s.resolveBucket(ctx, sourceBucketName, filterID)
 	if err != nil {

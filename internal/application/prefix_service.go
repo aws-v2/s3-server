@@ -6,7 +6,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -36,35 +35,6 @@ func NewPrefixService(bucketRepo domain.BucketRepository, fileRepo domain.FileRe
 	}
 }
 
-func (s *PrefixService) CreatePrefix(ctx context.Context, input dto.CreatePrefixInput) error {
-	ErrNotFound := errors.New("record not found*")
-
-	// check if bucket already exist
-
-	_, err := s.bucketRepo.GetBucketByID(ctx, input.BucketId, input.FildterId)
-	if err != nil {
-		return fmt.Errorf("bucket not found: %w", err)
-	}
-
-	// check if the prefix/folder already exists,
-	_, erre := s.bucketRepo.GetPrefixByName(ctx, input.BucketId, input.FildterId)
-	// get prefix name and parent id,
-
-	if erre != nil {
-		if errors.Is(err, ErrNotFound) {
-
-			_, errer := s.bucketRepo.CreatePrefix(ctx, input.BucketId, input.FildterId)
-			if errer != nil {
-				return fmt.Errorf("Issues persisting prefix records on the db : %w", err)
-			}
-			return nil
-
-		}
-		return fmt.Errorf("fSome other error : %w", err)
-	}
-	return fmt.Errorf("folderName already exist on this level not found: %w", err)
-
-}
 func (s *PrefixService) PrefixContent(ctx context.Context, bucketId, folderID string) (*domain.BucketRoot, error) {
 
 	//get the files whose folder_id==
@@ -73,7 +43,7 @@ func (s *PrefixService) PrefixContent(ctx context.Context, bucketId, folderID st
 	return &domain.BucketRoot{},nil
 
 }
-
+ 
 // ListByPrefix lists files by prefix
 func (s *PrefixService) ListByPrefix(ctx context.Context, input dto.ListByPrefixInput) (*dto.ListByPrefixOutput, error) {
 	// 1. Get all files with the given prefix

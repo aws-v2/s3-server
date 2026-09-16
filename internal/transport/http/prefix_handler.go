@@ -45,12 +45,12 @@ func (h *PrefixHandler) CreatePrefix(c *gin.Context) {
 	input.BucketId = bucketId
 	input.FildterId = userId
 
-	 err := h.prefixService.CreatePrefix(c.Request.Context(), input)
-	if err != nil {
-		log.Printf("[Handler:ListByPrefix] Service call, requestID %s error %s", requestID, err.Error())
-		utils.RespondError(c, http.StatusInternalServerError, fmt.Errorf("failed to list files by prefix"))
-		return
-	}
+	//  err := h.prefixService.CreatePrefix(c.Request.Context(), input)
+	// if err != nil {
+	// 	log.Printf("[Handler:ListByPrefix] Service call, requestID %s error %s", requestID, err.Error())
+	// 	utils.RespondError(c, http.StatusInternalServerError, fmt.Errorf("failed to list files by prefix"))
+	// 	return
+	// }
 
 	utils.RespondSucces(c, http.StatusOK, "files listed successfully", gin.H{
 		"data":"Folder created successfully",
@@ -74,7 +74,7 @@ func (h *PrefixHandler) PrefixContent(c *gin.Context) {
 	output, err := h.prefixService.PrefixContent(c.Request.Context(), bucketId, folderID)
 	if err != nil {
 		log.Printf("[Handler:ListByPrefix] Service call, requestID %s error %s", requestID, err.Error())
-		utils.RespondError(c, http.StatusInternalServerError, fmt.Errorf("failed to list files by prefix"))
+		utils.RespondError(c, http.StatusInternalServerError, fmt.Errorf("failed to list files by prefix66"))
 		return
 	}
 
@@ -96,7 +96,7 @@ func (h *PrefixHandler) ListByPrefix(c *gin.Context) {
 	output, err := h.prefixService.ListByPrefix(c.Request.Context(), input)
 	if err != nil {
 		log.Printf("[Handler:ListByPrefix] Service call, requestID %s error %s", requestID, err.Error())
-		utils.RespondError(c, http.StatusInternalServerError, fmt.Errorf("failed to list files by prefix"))
+		utils.RespondError(c, http.StatusInternalServerError, fmt.Errorf("failed to list files by prefixrtr"))
 		return
 	}
 

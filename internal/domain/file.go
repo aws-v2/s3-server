@@ -7,6 +7,7 @@ type File struct {
 	BucketID     string            `gorm:"not null"`
 	Key          string            `gorm:"not null;unique"`
 	Size         int64             `gorm:"not null"`
+	FolderId     string            `gorm:"not null"`
 	Version      string            `gorm:"version:255"`
 	MimeType     string            `gorm:"size:255"`
 	ContentType  string            `gorm:"size:255"`
@@ -15,9 +16,8 @@ type File struct {
 	Metadata     map[string]string `gorm:"type:jsonb"` // use "json" if MySQL
 	CreatedAt    time.Time         `gorm:"autoCreateTime"`
 	UpdatedAt    time.Time         `gorm:"autoUpdateTime"`
+	FileName string            `gorm:"not null;json:'file_name'"`
 }
-
-
 
 type FileDto struct {
 	ID           string            `gorm:"primaryKey"`

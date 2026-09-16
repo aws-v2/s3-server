@@ -168,6 +168,12 @@ func (c *PresignController) Start() error {
 		return fmt.Errorf("failed to subscribe to get_file_info: %w", err)
 	}
 
+	newUserCreatedSubj := fmt.Sprintf("%s..auth.user.registered", c.natsPrefix)
+	_, err = c.conn.Subscribe(newUserCreatedSubj, c.handleDefaultBucketSubj)
+	if err != nil {
+		return fmt.Errorf("failed to subscribe to %s: %w", newUserCreatedSubj, err)
+	}
+
 	getZipFileSubj := fmt.Sprintf("%s.s3.task.create_zip_download_url", c.natsPrefix)
 	_, err = c.conn.Subscribe(getZipFileSubj, c.handleCreateZip)
 	if err != nil {
@@ -254,23 +260,36 @@ func (c *PresignController) handleCreateZip(msg *nats.Msg) {
 		Sha256:    archiveOutput.Checksum,
 	})
 
- 
 }
+
+
 
 func (c *PresignController) handleDefaultBucketSubj(msg *nats.Msg) {
 	ctx := context.Background()
 
 	var event struct {
-		CorrelationID string `json:"correlation_id"`
-		UserID        string `json:"user_id"`
-		SessionID     string `json:"session_id"`
-		BucketName    string `json:"bucket_name"`
+		CorrelationID  string   `json:"correlation_id"`
+		UserID         string   `json:"user_id"`
+		SessionID      string   `json:"session_id"`
+		BucketName     string   `json:"bucket_name"`
+		DefaultFolders []string `json:"default_folders"`
+
+
+// this si here because of the auth.new.user event, from the auth service 
+		EventID    string `json:"event_id"`
+		EventType  string `json:"event_type"`
+		TenantID   string `json:"tenant_id"`
+		TenantName string `json:"tenant_name"`
 	}
 
 	if err := json.Unmarshal(msg.Data, &event); err != nil {
 		log.Printf("[S3] failed to parse create_default_bucket payload: %v", err)
 		reply(msg, CreateDefaultBucketResponse{Error: "invalid payload"})
 		return
+	}
+
+	if event.EventType!=""{
+
 	}
 
 	log.Printf("[S3] Ensuring default bucket for tenant: %s bucket: %s", event.UserID, event.BucketName)
@@ -286,7 +305,32 @@ func (c *PresignController) handleDefaultBucketSubj(msg *nats.Msg) {
 		return
 	}
 
-	log.Printf("[S3] Bucket ready: %s", event.BucketName)
+	log.Printf("[S3] Bucket ready$$$: %s\n", id)
+
+	if len(event.DefaultFolders) > 0 {
+
+		for _, df := range event.DefaultFolders {
+			err := c.bucketService.CreatePrefix(ctx, dto.CreatePrefixInput{
+				Name:      df,
+				Parent:    id,
+				BucketId:  id,
+				FildterId: event.UserID,
+			})
+
+			if err != nil {
+				log.Printf("[S3] Bucket ready default folders error: %s", err)
+				reply(msg, CreateDefaultBucketResponse{
+					BucketName: event.BucketName,
+					Created:    false,
+					Error:      err.Error(),
+				})
+				return
+			}
+
+		}
+
+	}
+
 	reply(msg, CreateDefaultBucketResponse{
 		BucketID:   id,
 		BucketName: event.BucketName,
@@ -382,7 +426,7 @@ func (c *PresignController) handleSystemUserCreated(msg *nats.Msg) {
 
 // ensureDefaultBucket gets or creates a system-owned bucket, returns its ID
 func (c *PresignController) ensureDefaultBucket(ctx context.Context, bucketName string, tenantID string) (string, error) {
-	bucket, err := c.bucketService.GetBucketByName(ctx, bucketName)
+	bucket, err := c.bucketService.GetBucketByName(ctx, bucketName, tenantID)
 	if err == nil {
 		return bucket.ID, nil
 	}
@@ -394,19 +438,14 @@ func (c *PresignController) ensureDefaultBucket(ctx context.Context, bucketName 
 		OwnerId: tenantID,
 	})
 	if err != nil {
-		return "", fmt.Errorf("create bucket %s: %w", bucketName, err)
+		return "", fmt.Errorf("create bucket error %s: %w", bucketName, err)
 	}
+
+	fmt.Printf("[EnsureDefaultBucket] results, Bucket: %+v", newBucket)
 
 	return newBucket.BucketID, nil
 }
 
-//	type ArchiveByPrefixInputMessage struct {
-//	    BucketID    string `json:"bucket_id"`
-//	    Prefix      string `json:"prefix" binding:"required"`
-//	    ArchiveName string `json:"archive_name" binding:"required"`
-//	    Format      string `json:"format"` // zip or tar
-//	    UserID      string `json:"user_id"`
-//	}
 func (c *PresignController) handleCreatePresignedURL(msg *nats.Msg) {
 	var req createPresignedURLRequest
 	if err := json.Unmarshal(msg.Data, &req); err != nil {
@@ -444,7 +483,7 @@ func (c *PresignController) handleCreatePresignedURL(msg *nats.Msg) {
 		return
 	}
 
-	bucketID, err := c.ensureDefaultBucket(ctx, bucketName, event.TenantID)
+	bucketID, err := c.ensureDefaultBucket(ctx, bucketName, req.UserID)
 	if err != nil {
 		log.Printf("[S3] Failed to ensure bucket %s: %v", bucketName, err)
 		c.respondWithError(msg, "failed to ensure bucket")
@@ -529,8 +568,7 @@ func resolveAssetBucket(req createPresignedURLRequest) (name, key string, err er
 
 	default:
 		// if there is no asset type then traet it likeits fromnormal users
-		// TODO: change this later
-		return DefaultGameBucket, fmt.Sprintf("uploads/games/%s/game", assetID), nil
+		return req.BucketName, req.Key, nil
 	}
 }
 
@@ -600,14 +638,7 @@ func (c *PresignController) handleCreatePresignDownloadURL(msg *nats.Msg) {
 	// Use the first matching file — all share the same content (same SHA256)
 	file := files[0]
 
-	log.Printf("[S3] PRESIGN_DOWNLOAD_FILE_RESOLVED",
-		"file_id", file.ID,
-		"bucket_id", file.BucketID,
-		"key", file.Key,
-		"size", file.Size,
-		"mime_type", file.MimeType,
-		"sha256", file.SHA256,
-	)
+	log.Printf("[S3] PRESIGN_DOWNLOAD_FILE_RESOLVED file_id %s, bucket_id:%s sha256:%s userid  %s ", file.ID, file.BucketID, file.SHA256, req.UserID)
 
 	// 2. Generate presigned download URL
 	expiresAt := time.Now().Add(15 * time.Minute)
@@ -810,7 +841,7 @@ func (c *PresignController) handleGetFileInfo(msg *nats.Msg) {
 		files = foundFiles
 	} else if req.BucketName != "" && req.Key != "" {
 		// Search by bucket and key
-		bucket, err := c.bucketService.GetBucketByName(ctx, req.BucketName)
+		bucket, err := c.bucketService.GetBucketByName(ctx, req.BucketName, req.UserID)
 		if err != nil {
 			log.Printf("[S3] bucket not found: %s", req.BucketName)
 			c.respondWithError(msg, "bucket not found")

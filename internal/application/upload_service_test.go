@@ -36,5 +36,5 @@ func TestUploadFile_NoPanic(t *testing.T) {
 	}()
 	
 	// This should not panic now
-	_, _ = s.UploadFile(ctx, input)
+	_, _ = s.UploadFile(ctx, input,"root","")
 }

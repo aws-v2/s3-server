@@ -33,6 +33,52 @@ func NewBucketHandler(bucketService *application.BucketService) *BucketHandler {
 	}
 }
 
+func (h *BucketHandler) ListPrefix(c *gin.Context) {
+
+}
+func (h *BucketHandler) CreatePrefix(c *gin.Context) {
+	bucketId := c.Param("bucketId")
+	parentId := c.Param("parentId")
+	requestID := c.GetString("requestId")
+	userId := c.GetString("userId")
+
+
+	fmt.Printf("The supposed bucked: %s and the parent id %s", bucketId,  parentId)
+
+	if bucketId == "" || userId == "" || parentId == "" {
+		log.Printf("[Handler:ListByPrefix] Bad request, requestID %s error %s", requestID, fmt.Errorf("Missing folder or bucket ids"))
+		utils.RespondError(c, http.StatusBadRequest, fmt.Errorf("invalid query parameters"))
+
+	}
+
+	var inputDto dto.CreatePrefixInputDto
+	if err := c.ShouldBindJSON(&inputDto); err != nil {
+		log.Printf("[Handler:ListByPrefix] Bad request, requestID %s error %s", inputDto.Name, err.Error())
+		utils.RespondError(c, http.StatusBadRequest, fmt.Errorf("invalid query parameters"))
+		return
+	}
+	var input dto.CreatePrefixInput
+
+	input.BucketId = bucketId
+	input.FildterId = userId
+	input.Parent = parentId
+	input.Name = inputDto.Name
+
+	log.Printf("the bucket_id :: %v the parent_id: %s", input.BucketId,input.Parent)
+
+	err := h.bucketService.CreatePrefix(c.Request.Context(), input)
+	if err != nil {
+		log.Printf("[Handler:ListByPrefix] Service call, requestID %s error %s", requestID, err.Error())
+		utils.RespondError(c, http.StatusInternalServerError, fmt.Errorf("failed to list files by prefix1"))
+		return
+	}
+
+	utils.RespondSucces(c, http.StatusOK, "files listed successfully", gin.H{
+		"data": "Folder created successfully",
+	})
+
+}
+
 // POST /buckets
 func (h *BucketHandler) CreateBucket(c *gin.Context) {
 	userId := c.GetString("userId")
@@ -103,9 +149,25 @@ func (h *BucketHandler) ListBuckets(c *gin.Context) {
 // GET /:bucketId
 func (h *BucketHandler) GetBucketInfo(c *gin.Context) {
 	bucketID := c.Param("bucketId")
+	folderName := c.Query("prefix")
+	userId := c.GetString("userId")
 	requestID := c.GetString("requestId")
 
-	output, err := h.bucketService.GetBucket(c.Request.Context(), bucketID)
+
+
+	if folderName != "" {
+		log.Printf("the folder namewerecieved %s", bucketID)
+		folder, err := h.bucketService.ListFolderContent(c.Request.Context(), folderName, bucketID, userId)
+		if err != nil {
+			log.Printf("[Handler:GetBucketInfo] Service call, requestID %s error %s", requestID, err.Error())
+			utils.RespondError(c, http.StatusInternalServerError, fmt.Errorf("bucket not found"))
+			return
+		}
+		utils.RespondSucces(c, http.StatusOK, "folder info retrieved successfully", folder)
+		return
+	}
+
+	output, err := h.bucketService.GetBucket(c.Request.Context(), bucketID,userId)
 	if err != nil {
 		log.Printf("[Handler:GetBucketInfo] Service call, requestID %s error %s", requestID, err.Error())
 		utils.RespondError(c, http.StatusNotFound, fmt.Errorf("bucket not found"))

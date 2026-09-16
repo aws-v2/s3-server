@@ -22,6 +22,11 @@ type PostgresRepository struct {
 	db *sql.DB
 }
 
+// GetchildFoldersForBucket implements domain.RepositoryPort.
+func (r *PostgresRepository) GetchildFoldersForBucket(ctx context.Context, folderIds []string) ([]domain.Prefix, error) {
+	panic("unimplemented")
+}
+
 // NewPostgresRepository creates a new PostgreSQL repository instance
 func NewPostgresRepository(db *sql.DB) *PostgresRepository {
 	return &PostgresRepository{db: db}
@@ -82,3 +87,4 @@ func contains(s, substr string) bool {
 
 // Verify interface implementation at compile time
 var _ domain.RepositoryPort = (*PostgresRepository)(nil)
+// func (r *PostgresRepository) GetFileByPrefixAndBucketID(ctx context.Context,bucketId, prefix string) (domain.File ,error) {

@@ -125,6 +125,15 @@ func registerObjectRoutes(v1 *gin.RouterGroup, handler *HandlerForFiles) {
 			middleware.EmitMetricsMiddleware("files"),
 			handler.DownloadFile)
 
+		object.GET("/:bucketId/files/:fileId/download2",
+    middleware.EmitMetricsMiddleware("files"),
+    handler.DownloadFile2)
+
+	object.GET("/:bucketId/files/:fileId/download-direct",
+    middleware.EmitMetricsMiddleware("files"),
+    handler.DownloadFile3)
+
+
 		// TODO: Get files for thewhole bucket,
 		object.GET("/export/:bucketId",
 			middleware.EmitMetricsMiddleware("files"),
@@ -190,6 +199,9 @@ func registerBucketRoutes(v1 *gin.RouterGroup, handlers *Handlers) {
 		// CORS (No Auth for local testing)
 		buckets.GET("/:bucketId/cors", handler.GetBucketCORS)
 		buckets.PUT("/:bucketId/cors", handler.UpdateBucketCORS)
+	// Create direct folder
+		buckets.POST("/folders/:bucketId/:parentId", handler.CreatePrefix)
+		buckets.GET("/folders/:parentId", handler.ListPrefix)
 
 		// Block Public Access
 		buckets.PUT("/:bucketId/block-public-access", handler.SetBucketBlockPublicAccess)

@@ -113,7 +113,7 @@ func Load() (*Config, error) {
 			UseSSL:    utilsCfg.S3.UseSSL,
 			Host:      utilsCfg.S3.Host,
 			Port:      utilsCfg.S3.Port,
-			DefaultBuckets: parseStringSlice(getEnv("S3_DEFAULT_BUCKETS", "libvirt-templates-system,agent-binary-system,system-bucket-1,system-bucket-2,system-bucket-3,system-bucket-4,system-bucket-5")),
+			DefaultBuckets: parseStringSlice(getEnv("S3_DEFAULT_BUCKETS", "libvirt-templates-system,agent-binary-system,system-bucket-1,system-bucket-2,system-bucket-3,system-bucket-4,system-bucket-5, lambdas-default-bucket")),
 		},
 	}, nil
 }

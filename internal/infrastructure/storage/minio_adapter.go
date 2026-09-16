@@ -194,7 +194,6 @@ func NewMinIOAdapter(bucketRepo domain.BucketRepository, hostRepo domain.HostRep
 	}, nil
 }
 
-
 func (m *MinIOAdapter) clientForBucket(ctx context.Context, bucketName string) (*minio.Client, error) {
 	bucket, err := m.bucketRepo.GetBucketByStorageName(ctx, bucketName)
 	if err != nil {
@@ -284,13 +283,50 @@ func (m *MinIOAdapter) SaveObjectReader(ctx context.Context, bucket, key string,
 	return nil
 }
 
+func (m *MinIOAdapter) GetObject2(
+    ctx context.Context,
+    bucket string,
+    key string,
+) (io.ReadCloser, error) {
+
+    client, err := m.clientForBucket(ctx, bucket)
+    if err != nil {
+        return nil, err
+    }
+
+    log.Printf(
+        "[MinIOAdapter:GetObject2] BucketID: %s key: %s",
+        bucket,
+        key,
+    )
+
+    object, err := client.GetObject(
+        ctx,
+        bucket,
+        key,
+        minio.GetObjectOptions{},
+    )
+
+    if err != nil {
+        return nil, fmt.Errorf(
+            "failed to get object: %w",
+            err,
+        )
+    }
+
+    return object, nil
+}
+
+
+
+
 // GetObject implements domain.StoragePort
 func (m *MinIOAdapter) GetObject(ctx context.Context, bucket, key string) ([]byte, error) {
 	client, err := m.clientForBucket(ctx, bucket)
 	if err != nil {
 		return nil, err
 	}
-log.Printf("client for bucket---->&%v",bucket)
+	log.Printf("[MinIOAdapter:GetObject]BucketID: %s key:%s", bucket, key)
 
 	object, err := client.GetObject(ctx, bucket, key, minio.GetObjectOptions{})
 	if err != nil {
