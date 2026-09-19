@@ -498,6 +498,8 @@ func (h *HandlerForFiles) DeleteFile(c *gin.Context) {
 // GET /:bucketId/files/:fileId
 func (h *HandlerForFiles) GetFileInfo(c *gin.Context) {
 	bucketID := c.Param("bucketId")
+    userID := c.GetString("userId")
+
 	folder := c.Query("folder")
 	requestID := c.GetString("requestId")
 	fileID := fmt.Sprintf("%s/%s", folder, c.Param("fileId"))
@@ -506,7 +508,7 @@ func (h *HandlerForFiles) GetFileInfo(c *gin.Context) {
 		fileID = strings.Split(strings.Split(fileID, "/")[1], "}")[0]
 	}
 
-	output, err := h.uploadService.GetFileInfo(c.Request.Context(), bucketID, fileID)
+	output, err := h.uploadService.GetFileInfo(c.Request.Context(), bucketID, fileID, userID)
 	if err != nil {
 		log.Printf("[Handler:GetFileInfo] Service call, requestID %s error %s", requestID, err.Error())
 		utils.RespondError(c, http.StatusNotFound, fmt.Errorf("file not found"))

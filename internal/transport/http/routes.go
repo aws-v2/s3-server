@@ -32,7 +32,7 @@ func RegisterRoutes(router *gin.Engine, handlers *Handlers) {
 	pub := router.Group("/api/v1/s3")
 
 	v1.Use(middleware.AuthContextMiddleware())
- 
+
 	// Track all V1 requests
 	v1.Use(handlers.Analytics.TrackRequestMiddleware())
 
@@ -64,7 +64,7 @@ func registerMetricsRoutes(v1 *gin.RouterGroup, handler *MetricsHandler) {
 }
 
 // registerHealthRoutes registers all health check routes
-func registerHealthRoutes(v1 *gin.RouterGroup,pub *gin.RouterGroup, handler *HandlerForHealth) {
+func registerHealthRoutes(v1 *gin.RouterGroup, pub *gin.RouterGroup, handler *HandlerForHealth) {
 
 	health := pub.Group("/health")
 	{
@@ -91,7 +91,6 @@ func registerObjectRoutes(v1 *gin.RouterGroup, handler *HandlerForFiles) {
 		MB = 1 << 20
 		GB = 1 << 30
 	)
-
 
 	{
 		// Upload file to bucket
@@ -126,13 +125,12 @@ func registerObjectRoutes(v1 *gin.RouterGroup, handler *HandlerForFiles) {
 			handler.DownloadFile)
 
 		object.GET("/:bucketId/files/:fileId/download2",
-    middleware.EmitMetricsMiddleware("files"),
-    handler.DownloadFile2)
+			middleware.EmitMetricsMiddleware("files"),
+			handler.DownloadFile2)
 
-	object.GET("/:bucketId/files/:fileId/download-direct",
-    middleware.EmitMetricsMiddleware("files"),
-    handler.DownloadFile3)
-
+		object.GET("/:bucketId/files/:fileId/download-direct",
+			middleware.EmitMetricsMiddleware("files"),
+			handler.DownloadFile3)
 
 		// TODO: Get files for thewhole bucket,
 		object.GET("/export/:bucketId",
@@ -199,7 +197,7 @@ func registerBucketRoutes(v1 *gin.RouterGroup, handlers *Handlers) {
 		// CORS (No Auth for local testing)
 		buckets.GET("/:bucketId/cors", handler.GetBucketCORS)
 		buckets.PUT("/:bucketId/cors", handler.UpdateBucketCORS)
-	// Create direct folder
+		// Create direct folder
 		buckets.POST("/folders/:bucketId/:parentId", handler.CreatePrefix)
 		buckets.GET("/folders/:parentId", handler.ListPrefix)
 

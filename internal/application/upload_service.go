@@ -787,9 +787,8 @@ func generateID() string {
 	return uuid.New().String()
 }
 
-func (s *UploadService) GetFileInfo(ctx context.Context, bucketID, fileID string) (*dto.FileInfoOutput, error) {
-	actor, _ := ctx.Value("actor").(domain.Actor)
-	filterID := actor.ID
+func (s *UploadService) GetFileInfo(ctx context.Context, bucketID, fileID,userID string) (*dto.FileInfoOutput, error) {
+	filterID := userID
  
 
 	// Resolve bucket by ID or Name

@@ -496,7 +496,7 @@ func (c *PresignController) handleCreatePresignedURL(msg *nats.Msg) {
 		UserId:    req.UserID,
 		Sha256:    req.Sha256,
 		AssetID:   req.AssetID,
-		Key:       key, // instead of the key it shouldbe the file id
+		Key:       key, // TODO:instead of the key it shouldbe the file id
 		ExpiresIn: 900,
 	})
 	if err != nil {

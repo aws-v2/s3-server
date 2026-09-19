@@ -37,10 +37,10 @@ return func(c *gin.Context) {
 			c.Next()
 
 		} else {
-			for _, header := range headers {
+			for iter, header := range headers {
 
 				if header == "" {
-					log.Printf("[Middleware] header %v not available, droping request", header)
+					log.Printf("[Middleware] header %v:%v not available, droping request", iter, header)
 					utils.RespondError(c, http.StatusUnauthorized, fmt.Errorf("Missing headers you dumb f*ck"))
 					c.Abort()
 					return
