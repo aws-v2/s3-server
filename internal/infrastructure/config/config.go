@@ -10,6 +10,7 @@ import (
 )
 
 type Config struct {
+	METRICS_API_KEY string
 	APP_PROFILE string
 	ServerPort  string
 	Eureka      EurekaConfig
@@ -73,6 +74,8 @@ func Load() (*Config, error) {
 	serverPort := getEnv("SERVER_PORT", "8082")
 
 	return &Config{
+		METRICS_API_KEY:"e956807e27669001319d73d3a9f1728a4a1161c79a6a287160c3a73394c05df8",
+
 		APP_PROFILE: appProfile,
 		ServerPort:  serverPort,
 		Eureka: EurekaConfig{

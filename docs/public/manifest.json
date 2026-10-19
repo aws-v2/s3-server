@@ -7,22 +7,6 @@
   "visibility": "public",
 
   "categories": [
-    {
-      "title": "Getting started",
-      "items": [
-        { "title": "Architecture & Design", "slug": "architecture" },
-        { "title": "API Architecture", "slug": "api-architecture" },
-        { "title": "Storage Design", "slug": "storage-design" },
-        { "title": "Deployment & Runtime", "slug": "deployment" },
-        { "title": "Developer Guide", "slug": "developer-guide" }
-      ]
-    },
-    {
-      "title": "Deeper dive",
-      "items": [
-        { "title": "Overview & Quickstart", "slug": "overview" },
-        { "title": "API Summary", "slug": "api" }
-      ]
-    }
+
   ]
 }

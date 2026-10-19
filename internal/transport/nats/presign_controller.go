@@ -168,7 +168,7 @@ func (c *PresignController) Start() error {
 		return fmt.Errorf("failed to subscribe to get_file_info: %w", err)
 	}
 
-	newUserCreatedSubj := fmt.Sprintf("%s..auth.user.registered", c.natsPrefix)
+	newUserCreatedSubj := fmt.Sprintf("%s.auth.user.registered", c.natsPrefix)
 	_, err = c.conn.Subscribe(newUserCreatedSubj, c.handleDefaultBucketSubj)
 	if err != nil {
 		return fmt.Errorf("failed to subscribe to %s: %w", newUserCreatedSubj, err)
@@ -176,6 +176,12 @@ func (c *PresignController) Start() error {
 
 	getZipFileSubj := fmt.Sprintf("%s.s3.task.create_zip_download_url", c.natsPrefix)
 	_, err = c.conn.Subscribe(getZipFileSubj, c.handleCreateZip)
+	if err != nil {
+		return fmt.Errorf("failed to subscribe to get_file_info: %w", err)
+	}
+
+	deleteFileSubj := fmt.Sprintf("%s.s3.task.delete_file", c.natsPrefix)
+	_, err = c.conn.Subscribe(deleteFileSubj, c.handleDeleteFile)
 	if err != nil {
 		return fmt.Errorf("failed to subscribe to get_file_info: %w", err)
 	}
@@ -199,6 +205,55 @@ type ArchiveByPrefixUrl struct {
 	FileCount int    `json:"file_count"` // zip or tar
 }
 
+// TODO:HIGH
+/* this removes the file record from the database record it doesnt delete the file from the
+actual blob storage ie minio, to be fixed*/
+func (c *PresignController) handleDeleteFile(msg *nats.Msg) {
+	type DeleteFileNatsRequest struct {
+		Sha256 string `json:"sha_256"`
+	}
+	log.Printf("Delete file request recieved")
+
+	type DeleteFileS3Resp struct {
+		Message string `json:"message"`
+		Code    int    `json:"code"`
+	}
+
+	var event DeleteFileNatsRequest
+
+	if err := json.Unmarshal(msg.Data, &event); err != nil {
+		log.Printf("[S3] failed to parse delete payload: %v", err)
+		reply(msg, DeleteFileS3Resp{Message: fmt.Sprintf("invalid payload, error: %v", err), Code: 500})
+		return
+	}
+
+	log.Printf("Delete file request recieved with event %+v ", event)
+
+	ctx := context.Background()
+	file, err := c.fileRepo.GetFilesBySHA256(ctx, event.Sha256)
+
+	if err != nil {
+		log.Printf("[S3] failed to get the file for deletion by sha256 %v", err)
+		reply(msg, DeleteFileS3Resp{Message: fmt.Sprintf("File not found by the sha256, error: %v", err), Code: 500})
+		return
+
+	}
+	if len(file) == 0 {
+		log.Printf("[S3] File was not found by that sha %v", err)
+		reply(msg, DeleteFileS3Resp{Message: fmt.Sprintf("File not found by the sha256, erro: %v", err), Code: 500})
+		return
+	}
+	err = c.fileRepo.DeleteFile(ctx, file[0].ID)
+	if err != nil {
+		log.Printf("[S3] failed to delete th file for some reason %v", err)
+		reply(msg, DeleteFileS3Resp{Message: fmt.Sprintf("File not found by the sha256, erro: %v", err), Code: 500})
+		return
+
+	}
+	reply(msg, DeleteFileS3Resp{Message: fmt.Sprintf("File deleted %v", err), Code: 400})
+	return
+
+}
 func (c *PresignController) handleCreateZip(msg *nats.Msg) {
 	ctx := context.Background()
 
@@ -262,8 +317,6 @@ func (c *PresignController) handleCreateZip(msg *nats.Msg) {
 
 }
 
-
-
 func (c *PresignController) handleDefaultBucketSubj(msg *nats.Msg) {
 	ctx := context.Background()
 
@@ -274,8 +327,7 @@ func (c *PresignController) handleDefaultBucketSubj(msg *nats.Msg) {
 		BucketName     string   `json:"bucket_name"`
 		DefaultFolders []string `json:"default_folders"`
 
-
-// this si here because of the auth.new.user event, from the auth service 
+		// this si here because of the auth.new.user event, from the auth service
 		EventID    string `json:"event_id"`
 		EventType  string `json:"event_type"`
 		TenantID   string `json:"tenant_id"`
@@ -288,7 +340,7 @@ func (c *PresignController) handleDefaultBucketSubj(msg *nats.Msg) {
 		return
 	}
 
-	if event.EventType!=""{
+	if event.EventType != "" {
 
 	}
 

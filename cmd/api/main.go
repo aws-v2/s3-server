@@ -11,6 +11,8 @@ import (
 	"s3/internal/infrastructure/config"
 	"s3/internal/infrastructure/event"
 	"s3/internal/infrastructure/logging"
+	prometheusmetrics "s3/internal/metrics"
+
 	"s3/internal/infrastructure/metrics"
 	"s3/internal/infrastructure/network"
 	"s3/internal/infrastructure/repository"
@@ -304,9 +306,12 @@ func main() {
 	if err := presignController.Start(); err != nil {
 		slog.Warn("Failed to start NATS presign controller", slog.Any("error", err))
 	}
+	prometheusmetrics .Serve(":7088", cfg.METRICS_API_KEY)
 
 	// 4. Setup Router
 	router := gin.Default()
+	router.Use(prometheusmetrics.MetricsMiddleware())   // first, before auth and before SetupRoutes
+
 	http.RegisterRoutes(router, handlers)
 
 	// 5. Start Server

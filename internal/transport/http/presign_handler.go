@@ -88,6 +88,7 @@ func (h *PresignHandler) HandleObjectUpload(c *gin.Context) {
 func (h *PresignHandler) GenerateUploadURL(c *gin.Context) {
 	bucketId := c.Param("bucketId")
 	requestID := c.GetString("requestId")
+	userID := c.GetString("userId")
 	
 	var input dto.GenerateUploadURLInput
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -96,7 +97,7 @@ func (h *PresignHandler) GenerateUploadURL(c *gin.Context) {
 		return
 	}
 	input.BucketID = bucketId
-
+	input.UserId=userID
 	output, err := h.presignService.GenerateUploadURL(c.Request.Context(), input)
 	if err != nil {
 		log.Printf("[Handler:GenerateUploadURL] Service call, requestID %s error %s", requestID, err.Error())
