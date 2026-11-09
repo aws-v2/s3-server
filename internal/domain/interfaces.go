@@ -58,6 +58,8 @@ type HostScheduler interface {
 }
 
 type FileRepository interface {
+		SampleBucketUsage(ctx context.Context) ([]BucketUsage, error)
+
 	SaveFile(ctx context.Context, file File) error
 	GetFileByID(ctx context.Context, id string) (*File, error)
 	GetFileByIDOrKey(ctx context.Context, id, bucketID string) (*File, error)

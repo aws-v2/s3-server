@@ -172,6 +172,17 @@ func (r *PostgresRepository) GetFileByID(ctx context.Context, id string) (*domai
 
 	return &file, nil
 }
+func (r *PostgresRepository) SampleBucketUsage(ctx context.Context) ([]domain.BucketUsage, error) {
+	bucketUsages := make([]domain.BucketUsage, 1)
+	bucketUsages = append(bucketUsages, domain.BucketUsage{
+		BucketID: "test",
+		OwnerID: "test",
+		Region: "test",
+		Bytes: 100,
+		Objects: 10,
+	})
+	return bucketUsages, nil
+}
 
 // SaveFile saves or updates a file record
 func (r *PostgresRepository) GetFileByPrefixAndBucketID(ctx context.Context, bucketId, prefixId string) ([]domain.File, error) {

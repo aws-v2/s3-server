@@ -3,6 +3,7 @@ package http
 import (
 	"s3/internal/domain"
 	"s3/internal/middleware"
+	"s3/internal/usage"
 
 	"github.com/gin-gonic/gin"
 )
@@ -96,15 +97,15 @@ func registerObjectRoutes(v1 *gin.RouterGroup, handler *HandlerForFiles) {
 		// Upload file to bucket
 		object.POST("/upload/:bucketId",
 			middleware.MaxFileSizeMiddleware(1*GB),
-			middleware.EmitMetricsMiddleware("files"),
-
+			middleware.EmitMetricsMiddleware("file_upload"),
+			usage.MeterIngress("file_upload"),
 			handler.UploadFile)
 
 		// Upload file to bucket
 		object.PUT("/upload",
 			middleware.MaxFileSizeMiddleware(1*GB),
-			middleware.EmitMetricsMiddleware("files"),
-
+			middleware.EmitMetricsMiddleware("file_upload"),
+			usage.MeterIngress("file_upload"),
 			handler.UploadFilePresign)
 
 		// Create direct folder
@@ -126,10 +127,12 @@ func registerObjectRoutes(v1 *gin.RouterGroup, handler *HandlerForFiles) {
 
 		object.GET("/:bucketId/files/:fileId/download2",
 			middleware.EmitMetricsMiddleware("files"),
+			usage.MeterEgress("file_download"),
 			handler.DownloadFile2)
 
 		object.GET("/:bucketId/files/:fileId/download-direct",
 			middleware.EmitMetricsMiddleware("files"),
+			usage.MeterEgress("file_download"),
 			handler.DownloadFile3)
 
 		// TODO: Get files for thewhole bucket,

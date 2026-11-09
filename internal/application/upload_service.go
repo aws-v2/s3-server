@@ -15,6 +15,7 @@ import (
 	"s3/internal/infrastructure/dto"
 	"s3/internal/infrastructure/metrics"
 	"s3/internal/infrastructure/utils"
+	"s3/internal/usage"
 
 	"crypto/sha256"
 	"encoding/hex"
@@ -509,6 +510,8 @@ func (s *UploadService) ExportSelect(ctx context.Context, files []string, bucket
 	if err != nil {
 		return ExportOutput{}, err
 	}
+	m := usage.FromContext(ctx)
+m.BucketID, m.OwnerID, m.Region = bucket.ID, bucket.OwnerID, bucket.Region
 
 	// Get all files in the bucket from the database
 	repoFiles, err := s.fileRepo.ListFiles(ctx, bucket.ID)

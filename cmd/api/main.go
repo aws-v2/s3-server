@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log/slog"
 	"os"
 	"s3/internal/application"
+	"s3/internal/usage"
 
 	"s3/database"
 	"s3/internal/infrastructure/config"
@@ -299,6 +301,8 @@ func main() {
 		Docs:         http.NewDocsHandler(docsService),
 		Metrics:      http.NewMetricsHandler(&metricsService),
 	}
+	mainContext := context.Background()
+	go usage.RunStorageSampler(mainContext, postgresRepo, 6*time.Second)
 
 	// Initialize and start NATS controllers
 	slog.Info("Initializing NATS controllers...")
